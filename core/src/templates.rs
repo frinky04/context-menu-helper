@@ -8,7 +8,9 @@ use crate::{
         ActionTarget, ChangeKind, CreateActionRequest, EntryScope, EntryState, MenuEntry,
         ProposedChange, RiskLevel,
     },
-    validation::{normalize_extension, sanitize_verb, validate_create_action_request},
+    validation::{
+        looks_like_file_path, normalize_extension, sanitize_verb, validate_create_action_request,
+    },
 };
 
 const GIT_BASH_LABELS: [&str; 2] = ["open git bash here", "git bash here"];
@@ -55,11 +57,7 @@ pub fn build_create_action_changes(request: &CreateActionRequest) -> Result<Vec<
         .filter(|v| !v.trim().is_empty())
         .unwrap_or_else(|| sanitize_verb(&request.label));
 
-    let command = if request.args.trim().is_empty() {
-        format!("\"{}\"", request.executable_path)
-    } else {
-        format!("\"{}\" {}", request.executable_path, request.args)
-    };
+    let command = build_command(&request.executable_path, &request.args);
 
     let mut entries = Vec::new();
     for target in &request.targets {
@@ -158,9 +156,42 @@ pub fn build_create_action_changes(request: &CreateActionRequest) -> Result<Vec<
     Ok(changes)
 }
 
+fn build_command(executable_or_alias: &str, args: &str) -> String {
+    let command_head = executable_or_alias.trim();
+    let unquoted_head = command_head.trim_matches('"');
+    let is_quoted = command_head.starts_with('"') && command_head.ends_with('"');
+
+    let normalized_head =
+        if !is_quoted && (command_head.contains(' ') || looks_like_file_path(command_head)) {
+            format!("\"{command_head}\"")
+        } else {
+            command_head.to_string()
+        };
+
+    let inner = if args.trim().is_empty() {
+        normalized_head
+    } else {
+        format!("{normalized_head} {}", args.trim())
+    };
+
+    // Explorer command invocation is stricter than an interactive terminal.
+    // Route alias-style commands and script entry points through cmd for predictable resolution.
+    let lower = unquoted_head.to_ascii_lowercase();
+    let needs_cmd_shell = !looks_like_file_path(command_head)
+        || lower.ends_with(".cmd")
+        || lower.ends_with(".bat")
+        || lower.ends_with(".ps1");
+
+    if needs_cmd_shell {
+        format!("cmd.exe /d /s /c {inner}")
+    } else {
+        inner
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::suggest_disable_git_bash;
+    use super::{build_command, suggest_disable_git_bash};
     use crate::models::{EntryScope, EntryState, MenuEntry};
 
     #[test]
@@ -179,5 +210,29 @@ mod tests {
 
         let suggestions = suggest_disable_git_bash(&entries);
         assert_eq!(suggestions.len(), 1);
+    }
+
+    #[test]
+    fn wraps_alias_command_through_cmd() {
+        assert_eq!(
+            build_command("mytool", "\"%1\""),
+            "cmd.exe /d /s /c mytool \"%1\""
+        );
+    }
+
+    #[test]
+    fn quotes_file_path_in_command() {
+        assert_eq!(
+            build_command(r"C:\Program Files\Tool\tool.exe", "\"%1\""),
+            r#""C:\Program Files\Tool\tool.exe" "%1""#
+        );
+    }
+
+    #[test]
+    fn wraps_script_path_through_cmd() {
+        assert_eq!(
+            build_command(r"C:\Tools\runner.cmd", "\"%1\""),
+            r#"cmd.exe /d /s /c "C:\Tools\runner.cmd" "%1""#
+        );
     }
 }

@@ -85,24 +85,42 @@
           <label id="extensions-row">
             File Extensions (comma-separated)
             <input type="text" id="extensions" value=".mp4,.mkv,.mov,.avi" />
+            <small id="extensions-helper" class="helper-text"></small>
           </label>
           <label>
-            Executable Path
+            Command or Executable
             <div class="path-input-row">
-              <input type="text" id="executable" placeholder="C:\\Program Files\\App\\app.exe" required />
+              <input
+                type="text"
+                id="executable"
+                placeholder="mytool or C:\\Program Files\\App\\app.exe"
+                required
+              />
               <button type="button" id="browse-executable-btn" class="button ghost path-btn">Browse...</button>
             </div>
+            <small class="helper-text">Aliases work if they are available on PATH for Explorer.</small>
           </label>
           <label>
-            Arguments (optional)
-            <input type="text" id="args" value="\"%1\"" />
+            What should the app receive?
+            <select id="arg-mode">
+              <option value="selected_item" selected>Selected item path (`%1`)</option>
+              <option value="current_folder">Current folder path (`%V`)</option>
+              <option value="none">No arguments</option>
+              <option value="custom">Custom</option>
+            </select>
           </label>
-          <div class="token-row">
+          <label>
+            Arguments
+            <input type="text" id="args" value="\"%1\"" />
+            <small class="helper-text">Use Custom mode for manual arguments.</small>
+          </label>
+          <div class="token-row" id="token-row">
             <span>Insert token:</span>
             <button type="button" class="token-btn" data-token="%1">Selected item (`%1`)</button>
             <button type="button" class="token-btn" data-token="%V">Current folder (`%V`)</button>
             <button type="button" class="token-btn" data-token="%v">Current folder lowercase (`%v`)</button>
           </div>
+          <small id="command-preview" class="helper-text"></small>
           <label>
             Optional Icon Path
             <div class="path-input-row">

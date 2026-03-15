@@ -160,6 +160,13 @@ body {
   align-items: start;
 }
 
+.entry-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .entry pre {
   margin: 6px 0 0;
   font-family: "JetBrains Mono", Consolas, monospace;
@@ -284,12 +291,22 @@ label {
   font-size: 0.92rem;
 }
 
-input {
+input,
+select {
   border: 1px solid #3a5449;
   border-radius: 8px;
   background: #111a17;
   color: var(--text);
   padding: 8px;
+  font-family: "JetBrains Mono", Consolas, monospace;
+}
+
+input:read-only {
+  background: #18231e;
+  color: #a8c0b4;
+}
+
+#command-preview {
   font-family: "JetBrains Mono", Consolas, monospace;
 }
 

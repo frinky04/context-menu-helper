@@ -9,12 +9,13 @@ pub fn validate_create_action_request(payload: &CreateActionRequest) -> Result<(
         bail!("Label is required");
     }
 
-    if payload.executable_path.trim().is_empty() {
-        bail!("Executable path is required");
+    let executable = payload.executable_path.trim();
+    if executable.is_empty() {
+        bail!("Command is required");
     }
 
-    if !Path::new(&payload.executable_path).exists() {
-        bail!("Executable does not exist: {}", payload.executable_path);
+    if looks_like_file_path(executable) && !Path::new(executable).exists() {
+        bail!("Command file does not exist: {executable}");
     }
 
     if payload.targets.is_empty() {
@@ -54,6 +55,19 @@ pub fn normalize_extension(input: &str) -> String {
     value
 }
 
+pub fn looks_like_file_path(input: &str) -> bool {
+    let value = input.trim();
+    if value.is_empty() {
+        return false;
+    }
+
+    // Absolute/relative path cues. Plain aliases like "mytool" should not be treated as paths.
+    value.starts_with("\\\\")
+        || value.contains('\\')
+        || value.contains('/')
+        || value.as_bytes().get(1).is_some_and(|byte| *byte == b':')
+}
+
 pub fn sanitize_verb(label: &str) -> String {
     let mut out = String::with_capacity(label.len());
     for ch in label.chars() {
@@ -74,7 +88,10 @@ pub fn sanitize_verb(label: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_extension, sanitize_verb};
+    use super::{
+        looks_like_file_path, normalize_extension, sanitize_verb, validate_create_action_request,
+    };
+    use crate::models::{ActionTarget, CreateActionRequest, CustomEntryScope};
 
     #[test]
     fn normalizes_extensions() {
@@ -84,7 +101,42 @@ mod tests {
 
     #[test]
     fn sanitizes_verb() {
-        assert_eq!(sanitize_verb("Lossless Cut"), "lossless_cut");
+        assert_eq!(sanitize_verb("My Tool"), "my_tool");
         assert_eq!(sanitize_verb("***"), "custom_action");
+    }
+
+    #[test]
+    fn detects_path_like_inputs() {
+        assert!(looks_like_file_path(r"C:\Program Files\App\app.exe"));
+        assert!(looks_like_file_path(r"\\server\share\tool.exe"));
+        assert!(looks_like_file_path("./tool.exe"));
+        assert!(!looks_like_file_path("mytool"));
+        assert!(!looks_like_file_path("notepad.exe"));
+    }
+
+    fn base_request(command: &str) -> CreateActionRequest {
+        CreateActionRequest {
+            label: "Open with Tool".to_string(),
+            executable_path: command.to_string(),
+            args: "\"%1\"".to_string(),
+            icon_path: None,
+            targets: vec![ActionTarget::Files],
+            extensions: vec![".mp4".to_string()],
+            apply_to_all_files: false,
+            verb: None,
+            scope: CustomEntryScope::CurrentUser,
+        }
+    }
+
+    #[test]
+    fn accepts_alias_command_without_path() {
+        let request = base_request("mytool");
+        assert!(validate_create_action_request(&request).is_ok());
+    }
+
+    #[test]
+    fn rejects_missing_path_like_command() {
+        let request = base_request("./definitely_missing_tool.exe");
+        assert!(validate_create_action_request(&request).is_err());
     }
 }

@@ -28,12 +28,16 @@ const ui = {
   targetDrives: document.getElementById("target-drives"),
   allFilesToggle: document.getElementById("all-files-toggle"),
   extensionsRow: document.getElementById("extensions-row"),
+  extensionsHelper: document.getElementById("extensions-helper"),
   extensionsInput: document.getElementById("extensions"),
   executableInput: document.getElementById("executable"),
   iconInput: document.getElementById("icon"),
   browseExecutableBtn: document.getElementById("browse-executable-btn"),
   browseIconBtn: document.getElementById("browse-icon-btn"),
+  argMode: document.getElementById("arg-mode"),
   argsInput: document.getElementById("args"),
+  tokenRow: document.getElementById("token-row"),
+  commandPreview: document.getElementById("command-preview"),
   tokenButtons: [...document.querySelectorAll(".token-btn")]
 };
 
@@ -53,13 +57,56 @@ const CATEGORY_META = {
 function updateAddActionFormState() {
   const filesChecked = ui.targetFiles.checked;
   ui.allFilesToggle.disabled = !filesChecked;
+
   if (!filesChecked) {
     ui.allFilesToggle.checked = false;
     ui.extensionsRow.style.display = "none";
+    ui.extensionsInput.disabled = true;
+    ui.extensionsHelper.textContent = 'Enable "Files" to target specific file types.';
     return;
   }
 
-  ui.extensionsRow.style.display = ui.allFilesToggle.checked ? "none" : "grid";
+  ui.extensionsRow.style.display = "grid";
+  const allFilesChecked = ui.allFilesToggle.checked;
+  ui.extensionsInput.disabled = allFilesChecked;
+  ui.extensionsHelper.textContent = allFilesChecked
+    ? 'Optional while "Show on all file types" is enabled.'
+    : "Required when targeting specific file types (example: .mp4,.mkv).";
+}
+
+function getArgsPreset(mode) {
+  if (mode === "selected_item") {
+    return '"%1"';
+  }
+  if (mode === "current_folder") {
+    return '"%V"';
+  }
+  return "";
+}
+
+function updateCommandPreview() {
+  const executable = ui.executableInput.value.trim();
+  const args = ui.argsInput.value.trim();
+  if (!executable) {
+    ui.commandPreview.textContent = "Command preview: set command or executable.";
+    return;
+  }
+
+  ui.commandPreview.textContent = `Command preview: ${executable}${args ? ` ${args}` : ""}`;
+}
+
+function updateArgModeState() {
+  const mode = ui.argMode.value;
+  const isCustom = mode === "custom";
+
+  ui.argsInput.readOnly = !isCustom;
+  ui.tokenRow.style.display = isCustom ? "flex" : "none";
+
+  if (!isCustom) {
+    ui.argsInput.value = getArgsPreset(mode);
+  }
+
+  updateCommandPreview();
 }
 
 function setStatus(message, isError = false) {
@@ -252,6 +299,13 @@ function isAdvancedEntry(entry) {
   const keyPath = (entry.key_path || "").toLowerCase();
   const command = (entry.command || "").toLowerCase();
   const label = (entry.label || "").toLowerCase();
+  const isCurrentUserEntry = entry.scope === "current_user";
+  const isUserClassesPath = keyPath.startsWith("hkcu\\software\\classes\\");
+
+  // User-level shell entries should stay visible in simple mode, even when they use cmd/powershell wrappers.
+  if (isCurrentUserEntry && isUserClassesPath && !keyPath.includes("\\shellex\\contextmenuhandlers\\")) {
+    return false;
+  }
 
   const builtInKeyHints = [
     "directory\\background\\shell\\cmd",
@@ -493,6 +547,50 @@ function buildToggleChanges(entries, targetEnabled) {
   }));
 }
 
+function buildRemoveChanges(entries) {
+  return entries.map((entry, index) => ({
+    id: `ui-remove-${Date.now()}-${index}`,
+    kind: "remove",
+    before: entry,
+    after: null,
+    risk_level: "medium",
+    reason: "User requested delete"
+  }));
+}
+
+function canDeleteEntry(entry) {
+  const keyPath = (entry.key_path || "").toLowerCase();
+  return (
+    entry.scope === "current_user" &&
+    keyPath.startsWith("hkcu\\software\\classes\\") &&
+    keyPath.includes("\\shell\\")
+  );
+}
+
+function canDeleteGroup(group) {
+  if (state.showAdvanced) {
+    return group.entries.length > 0;
+  }
+  return group.entries.length > 0 && group.entries.every(canDeleteEntry);
+}
+
+function buildDeleteWarning(group) {
+  const entryCount = group.entries.length;
+  if (state.showAdvanced) {
+    return (
+      `Delete "${group.label}" from the context menu?\n\n` +
+      `This will remove ${entryCount} registry entr${entryCount === 1 ? "y" : "ies"}.\n` +
+      "Advanced mode can include system/global actions. Deleting these may break built-in menu behavior and could require manual registry recovery.\n\n" +
+      "Continue only if you are sure."
+    );
+  }
+
+  return (
+    `Delete "${group.label}" from the context menu?\n\n` +
+    `This removes ${entryCount} registry entr${entryCount === 1 ? "y" : "ies"} (rollback remains available).`
+  );
+}
+
 async function toggleGroup(group) {
   const targetEnabled = group.state !== "enabled";
   const label = group.label || "Selected action";
@@ -507,6 +605,13 @@ async function toggleGroup(group) {
 
   const changes = buildToggleChanges(group.entries, targetEnabled);
   setStatus(`${targetEnabled ? "Showing" : "Hiding"} ${label} across ${group.entries.length} entries...`);
+  await invoke("apply_changes", { changes });
+}
+
+async function deleteGroup(group) {
+  const label = group.label || "Selected action";
+  const changes = buildRemoveChanges(group.entries);
+  setStatus(`Deleting ${label}...`);
   await invoke("apply_changes", { changes });
 }
 
@@ -572,6 +677,9 @@ function renderEntries() {
       left.append(advancedMeta, raw);
     }
 
+    const actions = document.createElement("div");
+    actions.className = "entry-actions";
+
     const toggle = document.createElement("button");
     const isEnabled = group.state === "enabled";
     toggle.className = isEnabled ? "button warn" : "button";
@@ -587,7 +695,30 @@ function renderEntries() {
       }
     };
 
-    row.append(left, toggle);
+    actions.appendChild(toggle);
+
+    if (canDeleteGroup(group)) {
+      const remove = document.createElement("button");
+      remove.className = "button danger";
+      remove.textContent = "Delete";
+      remove.onclick = async () => {
+        const confirmed = window.confirm(buildDeleteWarning(group));
+        if (!confirmed) {
+          return;
+        }
+
+        try {
+          await deleteGroup(group);
+          await refreshAll();
+          setStatus(`Deleted: ${group.label}`);
+        } catch (error) {
+          setStatus(error.message || String(error), true);
+        }
+      };
+      actions.appendChild(remove);
+    }
+
+    row.append(left, actions);
     ui.entriesList.appendChild(row);
   }
 }
@@ -667,7 +798,7 @@ function renderChangeSets() {
     button.onclick = async () => {
       try {
         setStatus(`Rolling back ${changeSet.id}...`);
-        const result = await invoke("rollback", { change_set_id: changeSet.id });
+        const result = await invoke("rollback", { changeSetId: changeSet.id });
         await refreshAll();
         setStatus(`Rollback complete. Restored ${result.applied.length} keys.`);
       } catch (error) {
@@ -737,14 +868,21 @@ ui.searchInput.addEventListener("input", () => {
 
 ui.targetFiles.addEventListener("change", updateAddActionFormState);
 ui.allFilesToggle.addEventListener("change", updateAddActionFormState);
+ui.argMode.addEventListener("change", updateArgModeState);
+ui.argsInput.addEventListener("input", updateCommandPreview);
+ui.executableInput.addEventListener("input", updateCommandPreview);
 
 for (const button of ui.tokenButtons) {
   button.addEventListener("click", () => {
+    if (ui.argsInput.readOnly) {
+      return;
+    }
     const token = button.dataset.token || "";
     const current = ui.argsInput.value || "";
     const needsSpace = current.length > 0 && !current.endsWith(" ");
     ui.argsInput.value = `${current}${needsSpace ? " " : ""}${token}`;
     ui.argsInput.focus();
+    updateCommandPreview();
   });
 }
 
@@ -753,6 +891,7 @@ ui.browseExecutableBtn.addEventListener("click", async () => {
     const picked = await invoke("pick_path", { kind: "executable" });
     if (picked) {
       ui.executableInput.value = picked;
+      updateCommandPreview();
     }
   } catch (error) {
     setStatus(error.message || String(error), true);
@@ -824,6 +963,8 @@ ui.applyCustomBtn.addEventListener("click", async () => {
 (async function init() {
   try {
     updateAddActionFormState();
+    updateArgModeState();
+    updateCommandPreview();
     setStatus("Loading entries...");
     await refreshAll();
     setStatus("Ready.");

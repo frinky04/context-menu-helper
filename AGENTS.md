@@ -39,6 +39,7 @@ If tradeoffs are needed, choose correctness + rollback safety over feature speed
 - UI should consume backend contracts, not invent separate state shapes without reason.
 - Refactor repeated heuristics into helper functions/modules.
 - Keep simple mode understandable for non-technical users; gate technical detail behind advanced mode.
+- Keep implementation generic. Do not turn user-provided examples into product-specific labels, placeholders, helper copy, or test fixtures unless explicitly requested.
 
 ## Command Surface (Tauri)
 
