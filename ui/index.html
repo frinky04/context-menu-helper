@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Context Menu Helper</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="ambient"></div>
+    <main class="app-shell">
+      <header class="hero">
+        <h1>Context Menu Helper</h1>
+        <p>Safely scan, disable, and add Windows shell actions with rollback support.</p>
+      </header>
+
+      <section class="panel" id="status-panel">
+        <h2>Status</h2>
+        <p id="status-text">Ready.</p>
+        <button id="refresh-btn" class="button ghost">Refresh Entries</button>
+      </section>
+
+      <section class="panel">
+        <h2>Detected Entries</h2>
+        <div class="inline-controls">
+          <label class="toggle">
+            <input type="checkbox" id="show-advanced-toggle" />
+            Show advanced (system and maintenance entries)
+          </label>
+        </div>
+        <div id="entries-list" class="entries-list"></div>
+      </section>
+
+      <section class="panel">
+        <h2>Recommended Actions</h2>
+        <div id="suggestions-list" class="entries-list"></div>
+        <button id="apply-suggestions-btn" class="button" disabled>Apply Suggestions</button>
+      </section>
+
+      <section class="panel">
+        <h2>Add Video Action</h2>
+        <form id="custom-form" class="custom-form">
+          <label>
+            Label
+            <input type="text" id="label" value="Lossless Cut" required />
+          </label>
+          <label>
+            Executable Path
+            <input type="text" id="executable" placeholder="C:\\Program Files\\LosslessCut\\LosslessCut.exe" required />
+          </label>
+          <label>
+            Args (must contain %1)
+            <input type="text" id="args" value="\"%1\"" required />
+          </label>
+          <label>
+            Optional Icon Path
+            <input type="text" id="icon" placeholder="C:\\Path\\to\\icon.ico" />
+          </label>
+          <label>
+            Video Extensions (comma-separated)
+            <input type="text" id="extensions" value=".mp4,.mkv,.mov,.avi" required />
+          </label>
+          <button type="submit" class="button">Generate Custom Changes</button>
+        </form>
+
+        <div>
+          <h3>Pending Custom Changes</h3>
+          <div id="custom-changes-list" class="entries-list"></div>
+          <button id="apply-custom-btn" class="button" disabled>Apply Custom Changes</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Rollback</h2>
+        <div id="change-sets-list" class="entries-list"></div>
+      </section>
+    </main>
+
+    <script src="main.js"></script>
+  </body>
+</html>
