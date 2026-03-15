@@ -7,142 +7,184 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <div class="ambient"></div>
-    <main class="app-shell">
-      <header class="hero">
-        <h1>Context Menu Helper</h1>
-        <p>Safely scan, disable, and add Windows shell actions with rollback support.</p>
-      </header>
+    <div class="app-shell">
+      <!-- ── Sidebar ── -->
+      <nav class="sidebar">
+        <div class="sidebar-logo">ctx</div>
 
-      <section class="panel" id="status-panel">
-        <h2>Status</h2>
-        <p id="status-text">Ready.</p>
-        <button id="refresh-btn" class="button ghost">Refresh Entries</button>
-      </section>
+        <button class="nav-btn active" data-panel="entries" title="Entries">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
+            <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
+          </svg>
+          <span>entries</span>
+        </button>
 
-      <section class="panel">
-        <h2>Detected Entries</h2>
-        <div class="inline-controls">
+        <button class="nav-btn" data-panel="create" title="Create Action">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/>
+          </svg>
+          <span>create</span>
+        </button>
+
+        <button class="nav-btn" data-panel="history" title="History">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+            <polyline points="12 7 12 12 16 14"/>
+          </svg>
+          <span>history</span>
+        </button>
+
+        <div class="sidebar-spacer"></div>
+
+        <button class="nav-btn" id="refresh-btn" title="Refresh Entries">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+          </svg>
+          <span>refresh</span>
+        </button>
+      </nav>
+
+      <!-- ── Content ── -->
+      <div class="content">
+        <div class="status-bar">
+          <p id="status-text">Ready.</p>
           <label class="toggle">
             <input type="checkbox" id="show-advanced-toggle" />
-            Show advanced (system and maintenance entries)
+            Advanced
           </label>
-          <input
-            type="text"
-            id="search-input"
-            class="search-input"
-            placeholder="Search actions (e.g. git, rider, alacritty)"
-          />
-          <small class="helper-text">Simple view hides system maintenance entries and registry details.</small>
         </div>
-        <p id="entries-summary" class="summary-text"></p>
-        <div id="category-filters" class="category-filters"></div>
-        <div id="entries-list" class="entries-list"></div>
-      </section>
 
-      <section class="panel">
-        <h2>Recommended Actions</h2>
-        <div id="suggestions-list" class="entries-list"></div>
-        <button id="apply-suggestions-btn" class="button" disabled>Apply Suggestions</button>
-      </section>
-
-      <section class="panel">
-        <h2>Add Action</h2>
-        <form id="custom-form" class="custom-form">
-          <label>
-            Action Name
-            <input type="text" id="label" value="Open with Custom Tool" required />
-          </label>
-          <fieldset class="target-grid">
-            <legend>Where should this appear?</legend>
-            <label class="inline-check">
-              <input type="checkbox" id="target-files" checked />
-              Files
-            </label>
-            <label class="inline-check">
-              <input type="checkbox" id="target-folders" />
-              Folders
-            </label>
-            <label class="inline-check">
-              <input type="checkbox" id="target-folder-background" />
-              Folder background
-            </label>
-            <label class="inline-check">
-              <input type="checkbox" id="target-drives" />
-              Drives
-            </label>
-          </fieldset>
-          <label class="inline-check">
-            <input type="checkbox" id="all-files-toggle" checked />
-            Show on all file types
-          </label>
-          <label id="extensions-row">
-            File Extensions (comma-separated)
-            <input type="text" id="extensions" value=".mp4,.mkv,.mov,.avi" />
-            <small id="extensions-helper" class="helper-text"></small>
-          </label>
-          <label>
-            Command or Executable
-            <div class="path-input-row">
+        <div class="panels">
+          <!-- ── Entries Panel ── -->
+          <section class="panel active" id="panel-entries">
+            <h2>Detected Entries</h2>
+            <div class="inline-controls">
               <input
                 type="text"
-                id="executable"
-                placeholder="mytool or C:\\Program Files\\App\\app.exe"
-                required
+                id="search-input"
+                class="search-input"
+                placeholder="Search actions..."
               />
-              <button type="button" id="browse-executable-btn" class="button ghost path-btn">Browse...</button>
             </div>
-            <small class="helper-text">Aliases work if they are available on PATH for Explorer.</small>
-          </label>
-          <label>
-            What should the app receive?
-            <select id="arg-mode">
-              <option value="selected_item" selected>Selected item path (`%1`)</option>
-              <option value="current_folder">Current folder path (`%V`)</option>
-              <option value="none">No arguments</option>
-              <option value="custom">Custom</option>
-            </select>
-          </label>
-          <label>
-            Arguments
-            <input type="text" id="args" value="\"%1\"" />
-            <small class="helper-text">Use Custom mode for manual arguments.</small>
-          </label>
-          <div class="token-row" id="token-row">
-            <span>Insert token:</span>
-            <button type="button" class="token-btn" data-token="%1">Selected item (`%1`)</button>
-            <button type="button" class="token-btn" data-token="%V">Current folder (`%V`)</button>
-            <button type="button" class="token-btn" data-token="%v">Current folder lowercase (`%v`)</button>
-          </div>
-          <small id="command-preview" class="helper-text"></small>
-          <label>
-            Optional Icon Path
-            <div class="path-input-row">
-              <input type="text" id="icon" placeholder="C:\\Path\\to\\icon.ico" />
-              <button type="button" id="browse-icon-btn" class="button ghost path-btn">Browse...</button>
-            </div>
-          </label>
-          <button type="submit" class="button">Generate Action Changes</button>
-        </form>
+            <p id="entries-summary" class="summary-text"></p>
+            <div id="category-filters" class="category-filters"></div>
+            <div id="entries-list" class="entries-list"></div>
 
-        <div>
-          <h3>Pending Action Changes</h3>
-          <div id="custom-changes-list" class="entries-list"></div>
-          <button id="apply-custom-btn" class="button" disabled>Apply Action Changes</button>
+            <!-- Suggestions subsection -->
+            <div class="panel-subsection">
+              <h3>Recommended Actions</h3>
+              <div id="suggestions-list" class="entries-list"></div>
+              <div style="margin-top: 10px;">
+                <button id="apply-suggestions-btn" class="button" disabled>Apply Suggestions</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- ── Create Panel ── -->
+          <section class="panel" id="panel-create">
+            <h2>Add Action</h2>
+            <form id="custom-form" class="custom-form" autocomplete="off">
+              <label>
+                Action Name
+                <input type="text" id="label" value="Open with Custom Tool" required />
+              </label>
+              <span class="field-label">Where should this appear?</span>
+              <fieldset class="target-grid">
+                <label class="inline-check">
+                  <input type="checkbox" id="target-files" checked />
+                  Files
+                </label>
+                <label class="inline-check">
+                  <input type="checkbox" id="target-folders" />
+                  Folders
+                </label>
+                <label class="inline-check">
+                  <input type="checkbox" id="target-folder-background" />
+                  Folder background
+                </label>
+                <label class="inline-check">
+                  <input type="checkbox" id="target-drives" />
+                  Drives
+                </label>
+              </fieldset>
+              <label class="inline-check">
+                <input type="checkbox" id="all-files-toggle" checked />
+                Show on all file types
+              </label>
+              <label id="extensions-row">
+                File Extensions (comma-separated)
+                <input type="text" id="extensions" value=".mp4,.mkv,.mov,.avi" />
+                <small id="extensions-helper" class="helper-text"></small>
+              </label>
+              <label>
+                Command or Executable
+                <div class="path-input-row">
+                  <input
+                    type="text"
+                    id="executable"
+                    placeholder="mytool or C:\Program Files\App\app.exe"
+                    required
+                  />
+                  <button type="button" id="browse-executable-btn" class="button ghost path-btn">Browse</button>
+                </div>
+                <small class="helper-text">Aliases work if they are available on PATH for Explorer.</small>
+              </label>
+              <label>
+                What should the app receive?
+                <select id="arg-mode">
+                  <option value="selected_item" selected>Selected item path (`%1`)</option>
+                  <option value="current_folder">Current folder path (`%V`)</option>
+                  <option value="none">No arguments</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </label>
+              <label>
+                Arguments
+                <input type="text" id="args" value="\"%1\"" />
+                <small class="helper-text">Use Custom mode for manual arguments.</small>
+              </label>
+              <div class="token-row" id="token-row">
+                <span>Insert token:</span>
+                <button type="button" class="token-btn" data-token="%1">%1 (selected item)</button>
+                <button type="button" class="token-btn" data-token="%V">%V (current folder)</button>
+                <button type="button" class="token-btn" data-token="%v">%v (folder lowercase)</button>
+              </div>
+              <small id="command-preview" class="helper-text"></small>
+              <label>
+                Optional Icon Path
+                <div class="path-input-row">
+                  <input type="text" id="icon" placeholder="C:\Path\to\icon.ico" />
+                  <button type="button" id="browse-icon-btn" class="button ghost path-btn">Browse</button>
+                </div>
+              </label>
+              <button type="submit" class="button">Generate Action Changes</button>
+            </form>
+
+            <div>
+              <h3>Pending Action Changes</h3>
+              <div id="custom-changes-list" class="entries-list"></div>
+              <div style="margin-top: 10px;">
+                <button id="apply-custom-btn" class="button" disabled>Apply Action Changes</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- ── History Panel ── -->
+          <section class="panel" id="panel-history">
+            <h2>Rollback History</h2>
+            <div id="change-sets-list" class="entries-list"></div>
+          </section>
         </div>
-      </section>
-
-      <section class="panel">
-        <h2>Rollback</h2>
-        <div id="change-sets-list" class="entries-list"></div>
-      </section>
-    </main>
+      </div>
+    </div>
 
     <script src="main.js"></script>
   </body>

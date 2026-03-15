@@ -7,7 +7,8 @@ const state = {
   expandedChangeSets: {},
   showAdvanced: false,
   searchTerm: "",
-  selectedCategory: "all"
+  selectedCategory: "all",
+  activePanel: "entries"
 };
 
 const ui = {
@@ -113,7 +114,7 @@ function updateArgModeState() {
 
 function setStatus(message, isError = false) {
   ui.status.textContent = message;
-  ui.status.style.color = isError ? "#ff9b9b" : "#8bd1ac";
+  ui.status.style.color = isError ? "#e05252" : "#888888";
 }
 
 async function invoke(command, payload = {}) {
@@ -1160,8 +1161,26 @@ ui.applyCustomBtn.addEventListener("click", async () => {
   }
 });
 
+function initNavigation() {
+  const navButtons = document.querySelectorAll(".nav-btn[data-panel]");
+  const panels = document.querySelectorAll(".panel[id^='panel-']");
+
+  function switchPanel(panelId) {
+    state.activePanel = panelId;
+    panels.forEach((p) => p.classList.toggle("active", p.id === `panel-${panelId}`));
+    navButtons.forEach((b) => b.classList.toggle("active", b.dataset.panel === panelId));
+  }
+
+  navButtons.forEach((btn) => {
+    btn.addEventListener("click", () => switchPanel(btn.dataset.panel));
+  });
+
+  switchPanel("entries");
+}
+
 (async function init() {
   try {
+    initNavigation();
     updateAddActionFormState();
     updateArgModeState();
     updateCommandPreview();
