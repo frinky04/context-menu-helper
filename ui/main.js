@@ -829,9 +829,10 @@ function renderEntries() {
     return;
   }
 
-  for (const group of groups) {
+  groups.forEach((group, index) => {
     const row = document.createElement("div");
     row.className = "entry";
+    row.style.setProperty("--i", Math.min(index, 15));
 
     const icon = createEntryIcon(group.label);
 
@@ -920,7 +921,7 @@ function renderEntries() {
 
     row.append(icon, left, actions);
     ui.entriesList.appendChild(row);
-  }
+  });
 }
 
 function renderSuggestions() {
@@ -933,9 +934,10 @@ function renderSuggestions() {
     return;
   }
 
-  for (const change of suggestions) {
+  suggestions.forEach((change, index) => {
     const row = document.createElement("div");
     row.className = "entry";
+    row.style.setProperty("--i", Math.min(index, 15));
 
     const entry = change.after || change.before;
     const label = entry ? stripMnemonic(entry.label) : "Suggested action";
@@ -948,7 +950,7 @@ function renderSuggestions() {
     row.appendChild(left);
 
     ui.suggestionsList.appendChild(row);
-  }
+  });
 }
 
 function renderCustomChanges() {
@@ -1240,11 +1242,14 @@ async function applyChanges(changes, successMessage) {
 
 ui.refreshBtn.addEventListener("click", async () => {
   try {
+    ui.refreshBtn.classList.add("spinning");
     setStatus("Refreshing...");
     await refreshAll();
     setStatus("Refreshed.");
   } catch (error) {
     setStatus(error.message || String(error), true);
+  } finally {
+    ui.refreshBtn.classList.remove("spinning");
   }
 });
 
