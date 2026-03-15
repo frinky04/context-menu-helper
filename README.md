@@ -39,11 +39,16 @@ No entries are ever deleted. The app uses the `LegacyDisable` registry strategy 
 
 ## Getting Started
 
+Download the latest installer from [GitHub Releases](https://github.com/frinky04/context-menu-helper/releases). Run the `.msi` or portable `.exe` — no additional dependencies required.
+
+Requires Windows 10 or later.
+
+## Development
+
 ### Prerequisites
 
 - [Rust](https://rustup.rs/) (stable toolchain)
 - [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/) (MSVC build tools on Windows)
-- Windows 10/11 (registry operations are Windows-only)
 
 ### Run in development
 
