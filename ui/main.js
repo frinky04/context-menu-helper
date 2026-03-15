@@ -21,7 +21,20 @@ const ui = {
   customForm: document.getElementById("custom-form"),
   showAdvancedToggle: document.getElementById("show-advanced-toggle"),
   searchInput: document.getElementById("search-input"),
-  categoryFilters: document.getElementById("category-filters")
+  categoryFilters: document.getElementById("category-filters"),
+  targetFiles: document.getElementById("target-files"),
+  targetFolders: document.getElementById("target-folders"),
+  targetFolderBackground: document.getElementById("target-folder-background"),
+  targetDrives: document.getElementById("target-drives"),
+  allFilesToggle: document.getElementById("all-files-toggle"),
+  extensionsRow: document.getElementById("extensions-row"),
+  extensionsInput: document.getElementById("extensions"),
+  executableInput: document.getElementById("executable"),
+  iconInput: document.getElementById("icon"),
+  browseExecutableBtn: document.getElementById("browse-executable-btn"),
+  browseIconBtn: document.getElementById("browse-icon-btn"),
+  argsInput: document.getElementById("args"),
+  tokenButtons: [...document.querySelectorAll(".token-btn")]
 };
 
 ui.showAdvancedToggle.checked = state.showAdvanced;
@@ -36,6 +49,18 @@ const CATEGORY_META = {
   system: "System",
   other: "Other"
 };
+
+function updateAddActionFormState() {
+  const filesChecked = ui.targetFiles.checked;
+  ui.allFilesToggle.disabled = !filesChecked;
+  if (!filesChecked) {
+    ui.allFilesToggle.checked = false;
+    ui.extensionsRow.style.display = "none";
+    return;
+  }
+
+  ui.extensionsRow.style.display = ui.allFilesToggle.checked ? "none" : "grid";
+}
 
 function setStatus(message, isError = false) {
   ui.status.textContent = message;
@@ -600,7 +625,7 @@ function renderCustomChanges() {
   ui.applyCustomBtn.disabled = state.customChanges.length === 0;
 
   if (state.customChanges.length === 0) {
-    ui.customChangesList.innerHTML = "<small>No generated custom changes yet.</small>";
+    ui.customChangesList.innerHTML = "<small>No generated action changes yet.</small>";
     return;
   }
 
@@ -710,27 +735,77 @@ ui.searchInput.addEventListener("input", () => {
   renderSuggestions();
 });
 
+ui.targetFiles.addEventListener("change", updateAddActionFormState);
+ui.allFilesToggle.addEventListener("change", updateAddActionFormState);
+
+for (const button of ui.tokenButtons) {
+  button.addEventListener("click", () => {
+    const token = button.dataset.token || "";
+    const current = ui.argsInput.value || "";
+    const needsSpace = current.length > 0 && !current.endsWith(" ");
+    ui.argsInput.value = `${current}${needsSpace ? " " : ""}${token}`;
+    ui.argsInput.focus();
+  });
+}
+
+ui.browseExecutableBtn.addEventListener("click", async () => {
+  try {
+    const picked = await invoke("pick_path", { kind: "executable" });
+    if (picked) {
+      ui.executableInput.value = picked;
+    }
+  } catch (error) {
+    setStatus(error.message || String(error), true);
+  }
+});
+
+ui.browseIconBtn.addEventListener("click", async () => {
+  try {
+    const picked = await invoke("pick_path", { kind: "icon" });
+    if (picked) {
+      ui.iconInput.value = picked;
+    }
+  } catch (error) {
+    setStatus(error.message || String(error), true);
+  }
+});
+
 ui.customForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   try {
-    const payload = {
+    const targets = [];
+    if (ui.targetFiles.checked) {
+      targets.push("files");
+    }
+    if (ui.targetFolders.checked) {
+      targets.push("folders");
+    }
+    if (ui.targetFolderBackground.checked) {
+      targets.push("folder_background");
+    }
+    if (ui.targetDrives.checked) {
+      targets.push("drives");
+    }
+
+    const request = {
       label: document.getElementById("label").value.trim(),
-      executable_path: document.getElementById("executable").value.trim(),
-      args: document.getElementById("args").value.trim(),
-      icon_path: document.getElementById("icon").value.trim() || null,
-      extensions: document
-        .getElementById("extensions")
-        .value.split(",")
+      executable_path: ui.executableInput.value.trim(),
+      args: ui.argsInput.value.trim(),
+      icon_path: ui.iconInput.value.trim() || null,
+      targets,
+      extensions: ui.extensionsInput.value
+        .split(",")
         .map((x) => x.trim())
         .filter(Boolean),
+      apply_to_all_files: ui.targetFiles.checked && ui.allFilesToggle.checked,
       verb: null,
       scope: "current_user"
     };
 
-    setStatus("Generating custom changes...");
-    state.customChanges = await invoke("create_custom_entry", { payload });
+    setStatus("Generating action changes...");
+    state.customChanges = await invoke("create_action", { request });
     renderCustomChanges();
-    setStatus(`Generated ${state.customChanges.length} custom changes.`);
+    setStatus(`Generated ${state.customChanges.length} action changes.`);
   } catch (error) {
     setStatus(error.message || String(error), true);
   }
@@ -738,7 +813,7 @@ ui.customForm.addEventListener("submit", async (event) => {
 
 ui.applyCustomBtn.addEventListener("click", async () => {
   try {
-    await applyChanges(state.customChanges, "Custom changes applied.");
+    await applyChanges(state.customChanges, "Action changes applied.");
     state.customChanges = [];
     renderCustomChanges();
   } catch (error) {
@@ -748,6 +823,7 @@ ui.applyCustomBtn.addEventListener("click", async () => {
 
 (async function init() {
   try {
+    updateAddActionFormState();
     setStatus("Loading entries...");
     await refreshAll();
     setStatus("Ready.");

@@ -7,7 +7,7 @@ Desktop tool for safely managing common Windows context-menu entries.
 - Scan safe registry paths for shell menu entries.
 - Suggest disabling known `Open Git Bash Here` variants.
 - Toggle menu entries between enabled/disabled (`LegacyDisable` strategy).
-- Generate custom video-context actions (example: Lossless Cut) for selected extensions.
+- Generate generic custom actions for files/folders/background/drives.
 - Apply change sets with automatic pre-change backups.
 - Roll back by saved change-set ID.
 - Tauri desktop UI for scan/suggest/custom/rollback workflows.
@@ -29,7 +29,7 @@ cargo test -p context_menu_core
 ### Desktop app (Windows recommended)
 
 ```bash
-cargo tauri dev --manifest-path src-tauri/Cargo.toml
+cargo tauri dev
 ```
 
 ## Notes

@@ -1,12 +1,14 @@
+use std::collections::BTreeSet;
+
 use anyhow::{Result, anyhow};
 use uuid::Uuid;
 
 use crate::{
     models::{
-        ChangeKind, CustomEntryPayload, EntryScope, EntryState, MenuEntry, ProposedChange,
-        RiskLevel,
+        ActionTarget, ChangeKind, CreateActionRequest, EntryScope, EntryState, MenuEntry,
+        ProposedChange, RiskLevel,
     },
-    validation::{normalize_extension, sanitize_verb, validate_custom_payload},
+    validation::{normalize_extension, sanitize_verb, validate_create_action_request},
 };
 
 const GIT_BASH_LABELS: [&str; 2] = ["open git bash here", "git bash here"];
@@ -44,45 +46,108 @@ pub fn build_toggle_change(entry: &MenuEntry, enable: bool, reason: &str) -> Pro
     }
 }
 
-pub fn build_custom_video_changes(payload: &CustomEntryPayload) -> Result<Vec<ProposedChange>> {
-    validate_custom_payload(payload)?;
+pub fn build_create_action_changes(request: &CreateActionRequest) -> Result<Vec<ProposedChange>> {
+    validate_create_action_request(request)?;
 
-    let verb = payload
+    let verb = request
         .verb
         .clone()
         .filter(|v| !v.trim().is_empty())
-        .unwrap_or_else(|| sanitize_verb(&payload.label));
+        .unwrap_or_else(|| sanitize_verb(&request.label));
 
-    let normalized_extensions: Vec<String> = payload
-        .extensions
-        .iter()
-        .map(|ext| normalize_extension(ext))
-        .collect();
+    let command = if request.args.trim().is_empty() {
+        format!("\"{}\"", request.executable_path)
+    } else {
+        format!("\"{}\" {}", request.executable_path, request.args)
+    };
 
-    let mut changes = Vec::with_capacity(normalized_extensions.len());
-    for ext in normalized_extensions {
-        let key_path = format!(
-            "HKCU\\Software\\Classes\\SystemFileAssociations\\{}\\shell\\{}",
-            ext, verb
-        );
+    let mut entries = Vec::new();
+    for target in &request.targets {
+        match target {
+            ActionTarget::FolderBackground => {
+                entries.push(MenuEntry {
+                    id: String::new(),
+                    label: request.label.clone(),
+                    scope: EntryScope::CurrentUser,
+                    key_path: format!(r"HKCU\Software\Classes\Directory\Background\shell\{}", verb),
+                    icon: request.icon_path.clone(),
+                    command: Some(command.clone()),
+                    applies_to: vec!["directory_background".to_string()],
+                    state: EntryState::Enabled,
+                });
+            }
+            ActionTarget::Folders => {
+                entries.push(MenuEntry {
+                    id: String::new(),
+                    label: request.label.clone(),
+                    scope: EntryScope::CurrentUser,
+                    key_path: format!(r"HKCU\Software\Classes\Directory\shell\{}", verb),
+                    icon: request.icon_path.clone(),
+                    command: Some(command.clone()),
+                    applies_to: vec!["directory".to_string()],
+                    state: EntryState::Enabled,
+                });
+            }
+            ActionTarget::Drives => {
+                entries.push(MenuEntry {
+                    id: String::new(),
+                    label: request.label.clone(),
+                    scope: EntryScope::CurrentUser,
+                    key_path: format!(r"HKCU\Software\Classes\Drive\shell\{}", verb),
+                    icon: request.icon_path.clone(),
+                    command: Some(command.clone()),
+                    applies_to: vec!["drive".to_string()],
+                    state: EntryState::Enabled,
+                });
+            }
+            ActionTarget::Files => {
+                if request.apply_to_all_files {
+                    entries.push(MenuEntry {
+                        id: String::new(),
+                        label: request.label.clone(),
+                        scope: EntryScope::CurrentUser,
+                        key_path: format!(r"HKCU\Software\Classes\*\shell\{}", verb),
+                        icon: request.icon_path.clone(),
+                        command: Some(command.clone()),
+                        applies_to: vec!["file".to_string()],
+                        state: EntryState::Enabled,
+                    });
+                } else {
+                    let mut extensions = BTreeSet::new();
+                    for extension in &request.extensions {
+                        extensions.insert(normalize_extension(extension));
+                    }
 
-        let after = MenuEntry {
-            id: format!("{}:{}", key_path, payload.label),
-            label: payload.label.clone(),
-            scope: EntryScope::CurrentUser,
-            key_path,
-            command: Some(format!("\"{}\" {}", payload.executable_path, payload.args)),
-            applies_to: vec![ext],
-            state: EntryState::Enabled,
-        };
+                    for extension in extensions {
+                        entries.push(MenuEntry {
+                            id: String::new(),
+                            label: request.label.clone(),
+                            scope: EntryScope::CurrentUser,
+                            key_path: format!(
+                                r"HKCU\Software\Classes\SystemFileAssociations\{}\shell\{}",
+                                extension, verb
+                            ),
+                            icon: request.icon_path.clone(),
+                            command: Some(command.clone()),
+                            applies_to: vec![extension],
+                            state: EntryState::Enabled,
+                        });
+                    }
+                }
+            }
+        }
+    }
 
+    let mut changes = Vec::with_capacity(entries.len());
+    for mut entry in entries {
+        entry.id = format!("{}:{}", entry.key_path, request.label);
         changes.push(ProposedChange {
             id: Uuid::new_v4().to_string(),
             kind: ChangeKind::Add,
             before: None,
-            after: Some(after),
+            after: Some(entry),
             risk_level: RiskLevel::Medium,
-            reason: "Add custom video action".to_string(),
+            reason: "Add custom action".to_string(),
         });
     }
 
@@ -106,6 +171,7 @@ mod tests {
             scope: EntryScope::CurrentUser,
             key_path: "HKCU\\Software\\Classes\\Directory\\Background\\shell\\git_shell"
                 .to_string(),
+            icon: None,
             command: Some("git-bash.exe".to_string()),
             applies_to: vec!["directory_background".to_string()],
             state: EntryState::Enabled,

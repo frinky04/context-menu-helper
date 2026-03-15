@@ -2,9 +2,9 @@ use std::path::Path;
 
 use anyhow::{Result, bail};
 
-use crate::models::CustomEntryPayload;
+use crate::models::{ActionTarget, CreateActionRequest};
 
-pub fn validate_custom_payload(payload: &CustomEntryPayload) -> Result<()> {
+pub fn validate_create_action_request(payload: &CreateActionRequest) -> Result<()> {
     if payload.label.trim().is_empty() {
         bail!("Label is required");
     }
@@ -17,12 +17,18 @@ pub fn validate_custom_payload(payload: &CustomEntryPayload) -> Result<()> {
         bail!("Executable does not exist: {}", payload.executable_path);
     }
 
-    if payload.extensions.is_empty() {
-        bail!("At least one extension is required");
+    if payload.targets.is_empty() {
+        bail!("Select at least one target context");
     }
 
-    if !payload.args.contains("%1") {
-        bail!("Arguments must include %1 placeholder for selected file path");
+    if payload
+        .targets
+        .iter()
+        .any(|target| matches!(target, ActionTarget::Files))
+        && !payload.apply_to_all_files
+        && payload.extensions.is_empty()
+    {
+        bail!("For file target, choose at least one extension or enable all files");
     }
 
     for ext in &payload.extensions {

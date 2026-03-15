@@ -3,9 +3,10 @@
 use std::{path::PathBuf, sync::Arc};
 
 use context_menu_core::{
-    ApplyResult, ContextMenuService, CustomEntryPayload, JsonLogStore, MenuEntry, ProposedChange,
+    ApplyResult, ContextMenuService, CreateActionRequest, JsonLogStore, MenuEntry, ProposedChange,
     WindowsRegistryProvider,
 };
+use rfd::FileDialog;
 use tauri::{Manager, State};
 
 struct AppState {
@@ -26,13 +27,24 @@ fn suggest_actions(state: State<'_, AppState>) -> Result<Vec<ProposedChange>, St
 }
 
 #[tauri::command]
-fn create_custom_entry(
-    payload: CustomEntryPayload,
+fn create_action(
+    request: CreateActionRequest,
     state: State<'_, AppState>,
 ) -> Result<Vec<ProposedChange>, String> {
     state
         .service
-        .create_custom_entry(payload)
+        .create_action(request)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn create_custom_entry(
+    payload: CreateActionRequest,
+    state: State<'_, AppState>,
+) -> Result<Vec<ProposedChange>, String> {
+    state
+        .service
+        .create_action(payload)
         .map_err(|err| err.to_string())
 }
 
@@ -77,6 +89,23 @@ fn list_change_sets(
         .map_err(|err| err.to_string())
 }
 
+#[tauri::command]
+fn pick_path(kind: String) -> Result<Option<String>, String> {
+    let mut dialog = FileDialog::new();
+    match kind.as_str() {
+        "icon" => {
+            dialog = dialog.add_filter("Icon files", &["ico", "png", "bmp", "exe"]);
+        }
+        _ => {
+            dialog = dialog.add_filter("Executable files", &["exe", "cmd", "bat", "com", "ps1"]);
+        }
+    }
+
+    Ok(dialog
+        .pick_file()
+        .map(|path| path.to_string_lossy().to_string()))
+}
+
 fn build_service(app: &tauri::AppHandle) -> anyhow::Result<ContextMenuService> {
     let base: PathBuf = app
         .path()
@@ -102,11 +131,13 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             scan_entries,
             suggest_actions,
+            create_action,
             create_custom_entry,
             toggle_entry,
             apply_changes,
             rollback,
-            list_change_sets
+            list_change_sets,
+            pick_path
         ])
         .run(tauri::generate_context!())
         .expect("error while running context menu helper");

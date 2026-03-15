@@ -23,6 +23,7 @@ pub struct MenuEntry {
     pub label: String,
     pub scope: EntryScope,
     pub key_path: String,
+    pub icon: Option<String>,
     pub command: Option<String>,
     pub applies_to: Vec<String>,
     pub state: EntryState,
@@ -99,12 +100,23 @@ pub enum CustomEntryScope {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct CustomEntryPayload {
+#[serde(rename_all = "snake_case")]
+pub enum ActionTarget {
+    Files,
+    Folders,
+    FolderBackground,
+    Drives,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CreateActionRequest {
     pub label: String,
     pub executable_path: String,
     pub args: String,
     pub icon_path: Option<String>,
+    pub targets: Vec<ActionTarget>,
     pub extensions: Vec<String>,
+    pub apply_to_all_files: bool,
     pub verb: Option<String>,
     pub scope: CustomEntryScope,
 }

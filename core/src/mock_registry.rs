@@ -38,6 +38,9 @@ impl RegistryProvider for MockRegistryProvider {
             if let Some(entry) = map.get(key_path) {
                 let mut values = BTreeMap::new();
                 values.insert("".to_string(), entry.label.clone());
+                if let Some(icon) = &entry.icon {
+                    values.insert("Icon".to_string(), icon.clone());
+                }
                 if entry.state == EntryState::Disabled {
                     values.insert("LegacyDisable".to_string(), String::new());
                 }
@@ -129,6 +132,7 @@ impl RegistryProvider for MockRegistryProvider {
             label,
             scope: crate::models::EntryScope::CurrentUser,
             key_path: backup.key_path.clone(),
+            icon: backup.values.get("Icon").cloned(),
             command: backup.command_values.get("").cloned(),
             applies_to: vec!["unknown".to_string()],
             state,

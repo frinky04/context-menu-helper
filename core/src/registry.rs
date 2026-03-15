@@ -128,6 +128,11 @@ mod windows {
                     let (key, _) = hive_key.create_subkey(subpath)?;
                     key.set_value("", &entry.label)?;
                     key.set_value("MUIVerb", &entry.label)?;
+                    if let Some(icon) = &entry.icon
+                        && !icon.trim().is_empty()
+                    {
+                        key.set_value("Icon", icon)?;
+                    }
                     if let Some(command) = &entry.command {
                         let (command_key, _) = key.create_subkey("command")?;
                         command_key.set_value("", command)?;
@@ -260,6 +265,7 @@ mod windows {
             label,
             scope: scope_from_hive(hive),
             key_path: absolute_key_path.to_string(),
+            icon: key.get_value::<String, _>("Icon").ok(),
             command: handler_clsid,
             applies_to: infer_applies_to(subpath),
             state,
@@ -296,6 +302,7 @@ mod windows {
             label,
             scope,
             key_path: absolute_key_path.to_string(),
+            icon: key.get_value::<String, _>("Icon").ok(),
             command,
             applies_to,
             state,

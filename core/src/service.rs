@@ -7,11 +7,11 @@ use uuid::Uuid;
 use crate::{
     log_store::ChangeLogStore,
     models::{
-        ApplyResult, ChangeFailure, ChangeSetRecord, ChangeSetSummary, CustomEntryPayload,
+        ApplyResult, ChangeFailure, ChangeSetRecord, ChangeSetSummary, CreateActionRequest,
         ProposedChange,
     },
     registry::{RegistryProvider, SharedRegistryProvider},
-    templates::{build_custom_video_changes, build_toggle_change, suggest_disable_git_bash},
+    templates::{build_create_action_changes, build_toggle_change, suggest_disable_git_bash},
 };
 
 pub struct ContextMenuService {
@@ -36,8 +36,8 @@ impl ContextMenuService {
         Ok(suggest_disable_git_bash(&entries))
     }
 
-    pub fn create_custom_entry(&self, payload: CustomEntryPayload) -> Result<Vec<ProposedChange>> {
-        build_custom_video_changes(&payload)
+    pub fn create_action(&self, request: CreateActionRequest) -> Result<Vec<ProposedChange>> {
+        build_create_action_changes(&request)
     }
 
     pub fn toggle_entry(&self, id: &str, enabled: bool) -> Result<ApplyResult> {
@@ -174,6 +174,7 @@ mod tests {
             scope: EntryScope::CurrentUser,
             key_path: "HKCU\\Software\\Classes\\Directory\\Background\\shell\\git_shell"
                 .to_string(),
+            icon: None,
             command: Some("git-bash.exe".to_string()),
             applies_to: vec!["directory_background".to_string()],
             state: EntryState::Enabled,

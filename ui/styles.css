@@ -215,6 +215,69 @@ body {
   margin-bottom: 12px;
 }
 
+.target-grid {
+  border: 1px solid #3a5449;
+  border-radius: 8px;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.target-grid legend {
+  color: var(--muted);
+  font-size: 0.88rem;
+  padding: 0 4px;
+}
+
+.inline-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #cde3d8;
+}
+
+.inline-check input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
+.token-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.token-btn {
+  border: 1px solid #3f5e50;
+  background: #15241e;
+  color: #d7eee2;
+  border-radius: 8px;
+  padding: 5px 8px;
+  cursor: pointer;
+  font-family: "JetBrains Mono", Consolas, monospace;
+  font-size: 0.75rem;
+}
+
+.token-btn:hover {
+  border-color: #5a8f73;
+}
+
+.path-input-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.path-btn {
+  white-space: nowrap;
+}
+
 label {
   display: grid;
   gap: 3px;
