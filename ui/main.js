@@ -49,6 +49,15 @@ function stripMnemonic(label) {
     .trim();
 }
 
+function isGuidLike(value) {
+  if (!value) {
+    return false;
+  }
+
+  const trimmed = value.trim().replace(/^\{/, "").replace(/\}$/, "");
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed);
+}
+
 function friendlyState(stateValue) {
   return stateValue === "enabled" ? "Visible" : "Hidden";
 }
@@ -71,10 +80,29 @@ function friendlyContext(appliesTo) {
     directory: "folders",
     directory_background: "folder background",
     drive: "drives",
+    file: "files",
+    all_filesystem_objects: "files and folders",
     unknown: "other"
   };
 
-  const values = (appliesTo || []).map((item) => map[item] || item);
+  const unique = [...new Set(appliesTo || [])];
+  if (unique.length === 0) {
+    return "items";
+  }
+
+  const extensions = unique.filter((item) => item.startsWith("."));
+  if (extensions.length === unique.length) {
+    if (extensions.length > 6) {
+      return `${extensions.length} file types`;
+    }
+    return extensions.join(", ");
+  }
+
+  const values = unique.map((item) => map[item] || item);
+  if (values.length > 4) {
+    return `${values.slice(0, 3).join(", ")} +${values.length - 3} more`;
+  }
+
   return values.join(", ");
 }
 
@@ -93,6 +121,10 @@ function extractExecutable(command) {
 }
 
 function appNameFromCommand(command) {
+  if (isGuidLike(command)) {
+    return "";
+  }
+
   const exePath = extractExecutable(command);
   if (!exePath) {
     return "";
@@ -142,6 +174,10 @@ function isAdvancedEntry(entry) {
     return true;
   }
 
+  if (isGuidLike(entry.label) && (!entry.command || isGuidLike(entry.command))) {
+    return true;
+  }
+
   if (command.includes("%systemroot%") || command.includes("\\windows\\system32")) {
     return true;
   }
@@ -167,24 +203,46 @@ function scopeRank(scope) {
   return 2;
 }
 
-function dedupeEntries(entries) {
-  const bySignature = new Map();
+function groupEntries(entries) {
+  const groups = new Map();
 
   for (const entry of entries) {
-    const applies = [...(entry.applies_to || [])].sort().join(",");
-    const signature = [
+    const key = [
       stripMnemonic((entry.label || "").toLowerCase()),
-      applies,
-      (entry.command || "").trim().toLowerCase()
+      (entry.command || "").trim().toLowerCase(),
+      entry.state
     ].join("|");
 
-    const current = bySignature.get(signature);
-    if (!current || scopeRank(entry.scope) < scopeRank(current.scope)) {
-      bySignature.set(signature, entry);
+    const existing = groups.get(key);
+    if (!existing) {
+      groups.set(key, {
+        key,
+        label: stripMnemonic(entry.label),
+        state: entry.state,
+        command: entry.command,
+        entries: [entry],
+        appliesSet: new Set(entry.applies_to || []),
+        primary: entry
+      });
+      continue;
+    }
+
+    existing.entries.push(entry);
+    for (const applies of entry.applies_to || []) {
+      existing.appliesSet.add(applies);
+    }
+
+    if (scopeRank(entry.scope) < scopeRank(existing.primary.scope)) {
+      existing.primary = entry;
     }
   }
 
-  return [...bySignature.values()];
+  return [...groups.values()]
+    .map((group) => ({
+      ...group,
+      applies_to: [...group.appliesSet].sort()
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label));
 }
 
 function entryMatchesSearch(entry) {
@@ -204,15 +262,22 @@ function entryMatchesSearch(entry) {
   return text.includes(state.searchTerm);
 }
 
-function getVisibleEntries() {
-  const deduped = dedupeEntries(state.entries);
-
-  return deduped.filter((entry) => {
+function getBaseEntries() {
+  return state.entries.filter((entry) => {
     if (!state.showAdvanced && isAdvancedEntry(entry)) {
       return false;
     }
-    return entryMatchesSearch(entry);
+    return true;
   });
+}
+
+function getVisibleEntryGroups() {
+  const base = getBaseEntries().filter(entryMatchesSearch);
+  return groupEntries(base);
+}
+
+function getAllEntryGroupsForSummary() {
+  return groupEntries(getBaseEntries());
 }
 
 function getVisibleSuggestions() {
@@ -229,54 +294,99 @@ function getVisibleSuggestions() {
   });
 }
 
+function buildToggleChanges(entries, targetEnabled) {
+  return entries.map((entry, index) => ({
+    id: `ui-${Date.now()}-${index}`,
+    kind: targetEnabled ? "enable" : "disable",
+    before: entry,
+    after: {
+      ...entry,
+      state: targetEnabled ? "enabled" : "disabled"
+    },
+    risk_level: "low",
+    reason: `User requested ${targetEnabled ? "show" : "hide"}`
+  }));
+}
+
+async function toggleGroup(group) {
+  const targetEnabled = group.state !== "enabled";
+  const label = group.label || "Selected action";
+
+  if (group.entries.length === 1) {
+    await invoke("toggle_entry", {
+      id: group.entries[0].id,
+      enabled: targetEnabled
+    });
+    return;
+  }
+
+  const changes = buildToggleChanges(group.entries, targetEnabled);
+  setStatus(`${targetEnabled ? "Showing" : "Hiding"} ${label} across ${group.entries.length} entries...`);
+  await invoke("apply_changes", { changes });
+}
+
 function renderEntries() {
   ui.entriesList.innerHTML = "";
-  const entries = getVisibleEntries();
-  const total = dedupeEntries(state.entries).length;
+  const groups = getVisibleEntryGroups();
+  const allGroups = getAllEntryGroupsForSummary();
 
-  ui.entriesSummary.textContent = `Showing ${entries.length} of ${total} actions`;
+  ui.entriesSummary.textContent = `Showing ${groups.length} of ${allGroups.length} actions`;
 
-  if (entries.length === 0) {
+  if (groups.length === 0) {
     ui.entriesList.innerHTML = "<small>No actions match your current view.</small>";
     return;
   }
 
-  for (const entry of entries) {
+  for (const group of groups) {
     const row = document.createElement("div");
     row.className = "entry";
 
     const left = document.createElement("div");
     const title = document.createElement("strong");
-    title.textContent = stripMnemonic(entry.label);
+    title.textContent = group.label;
 
     const meta = document.createElement("small");
-    meta.textContent = `${friendlyState(entry.state)} on ${friendlyContext(entry.applies_to)}`;
+    meta.textContent = `${friendlyState(group.state)} on ${friendlyContext(group.applies_to)}`;
 
-    const app = appNameFromCommand(entry.command);
+    const app = appNameFromCommand(group.command);
     const detail = document.createElement("small");
-    detail.textContent = app ? `Opens with ${app}` : "Custom shell action";
+    if (app) {
+      detail.textContent = `Opens with ${app}`;
+    } else if (group.entries.some((entry) => entry.key_path.toLowerCase().includes("\\shellex\\contextmenuhandlers\\"))) {
+      detail.textContent = "Windows extension action";
+    } else {
+      detail.textContent = "Custom shell action";
+    }
 
     left.append(title, meta, detail);
 
+    if (group.entries.length > 1) {
+      const groupedCount = document.createElement("small");
+      groupedCount.textContent = `${group.entries.length} linked registry entries`;
+      left.append(groupedCount);
+    }
+
     if (state.showAdvanced) {
       const advancedMeta = document.createElement("small");
-      advancedMeta.textContent = `${friendlyScope(entry.scope)} | ${entry.scope}`;
+      advancedMeta.textContent = `${friendlyScope(group.primary.scope)} | ${group.primary.scope}`;
 
       const raw = document.createElement("pre");
-      raw.textContent = `${entry.key_path}${entry.command ? `\n${entry.command}` : ""}`;
+      raw.textContent = `${group.primary.key_path}${group.primary.command ? `\n${group.primary.command}` : ""}${
+        group.entries.length > 1 ? `\n(+${group.entries.length - 1} more keys)` : ""
+      }`;
       left.append(advancedMeta, raw);
     }
 
     const toggle = document.createElement("button");
-    const isEnabled = entry.state === "enabled";
+    const isEnabled = group.state === "enabled";
     toggle.className = isEnabled ? "button warn" : "button";
     toggle.textContent = isEnabled ? "Hide" : "Show";
     toggle.onclick = async () => {
       try {
-        setStatus(`${isEnabled ? "Hiding" : "Showing"} ${stripMnemonic(entry.label)}...`);
-        await invoke("toggle_entry", { id: entry.id, enabled: !isEnabled });
+        setStatus(`${isEnabled ? "Hiding" : "Showing"} ${group.label}...`);
+        await toggleGroup(group);
         await refreshAll();
-        setStatus(`Updated: ${stripMnemonic(entry.label)}`);
+        setStatus(`Updated: ${group.label}`);
       } catch (error) {
         setStatus(error.message || String(error), true);
       }
