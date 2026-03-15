@@ -29,19 +29,22 @@ const ui = {
   targetFolders: document.getElementById("target-folders"),
   targetFolderBackground: document.getElementById("target-folder-background"),
   targetDrives: document.getElementById("target-drives"),
-  allFilesToggle: document.getElementById("all-files-toggle"),
+  fileTypeToggle: document.getElementById("file-type-toggle"),
+  fileTypeRow: document.getElementById("file-type-row"),
   extensionsRow: document.getElementById("extensions-row"),
-  extensionsHelper: document.getElementById("extensions-helper"),
-  extensionsInput: document.getElementById("extensions"),
+  chipContainer: document.getElementById("chip-container"),
+  chipInput: document.getElementById("chip-input"),
   executableInput: document.getElementById("executable"),
   iconInput: document.getElementById("icon"),
   browseExecutableBtn: document.getElementById("browse-executable-btn"),
   browseIconBtn: document.getElementById("browse-icon-btn"),
-  argMode: document.getElementById("arg-mode"),
   argsInput: document.getElementById("args"),
-  tokenRow: document.getElementById("token-row"),
   commandPreview: document.getElementById("command-preview"),
-  tokenButtons: [...document.querySelectorAll(".token-btn")]
+  quickFillButtons: [...document.querySelectorAll(".quick-fill-btn")],
+  resetFormBtn: document.getElementById("reset-form-btn"),
+  pendingCard: document.getElementById("pending-card"),
+  pendingCount: document.getElementById("pending-count"),
+  discardChangesBtn: document.getElementById("discard-changes-btn")
 };
 
 ui.showAdvancedToggle.checked = state.showAdvanced;
@@ -57,59 +60,163 @@ const CATEGORY_META = {
   other: "Other"
 };
 
+// ── Chip input for extensions ──────────────────────────
+
+class ChipInput {
+  constructor(container, input, onChange) {
+    this.container = container;
+    this.input = input;
+    this.onChange = onChange;
+    this.values = new Set();
+
+    this.input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === ",") {
+        event.preventDefault();
+        this._addFromInput();
+      }
+      if (event.key === "Backspace" && this.input.value === "" && this.values.size > 0) {
+        const last = [...this.values].pop();
+        this.remove(last);
+      }
+    });
+
+    this.input.addEventListener("paste", (event) => {
+      event.preventDefault();
+      const text = (event.clipboardData || window.clipboardData).getData("text");
+      for (const part of text.split(",")) {
+        const normalized = this._normalize(part);
+        if (normalized) {
+          this.add(normalized);
+        }
+      }
+    });
+
+    this.container.addEventListener("click", () => this.input.focus());
+  }
+
+  _normalize(value) {
+    let v = value.trim().toLowerCase();
+    if (!v) {
+      return null;
+    }
+    if (!v.startsWith(".")) {
+      v = `.${v}`;
+    }
+    if (v.length < 2 || !/^\.[a-z0-9]+$/i.test(v)) {
+      return null;
+    }
+    return v;
+  }
+
+  _addFromInput() {
+    const normalized = this._normalize(this.input.value);
+    if (normalized) {
+      this.add(normalized);
+    }
+    this.input.value = "";
+  }
+
+  add(value) {
+    if (this.values.has(value)) {
+      return;
+    }
+    this.values.add(value);
+
+    const chip = document.createElement("span");
+    chip.className = "chip";
+    chip.dataset.value = value;
+    chip.innerHTML = `${value}<button type="button" class="chip-remove">&times;</button>`;
+    chip.querySelector(".chip-remove").addEventListener("click", () => this.remove(value));
+    this.container.insertBefore(chip, this.input);
+    this._updatePlaceholder();
+    this.onChange();
+  }
+
+  remove(value) {
+    this.values.delete(value);
+    const chip = this.container.querySelector(`.chip[data-value="${value}"]`);
+    if (chip) {
+      chip.remove();
+    }
+    this._updatePlaceholder();
+    this.onChange();
+  }
+
+  getValues() {
+    return [...this.values];
+  }
+
+  clear() {
+    this.values.clear();
+    this.container.querySelectorAll(".chip").forEach((chip) => chip.remove());
+    this.input.value = "";
+    this._updatePlaceholder();
+    this.onChange();
+  }
+
+  _updatePlaceholder() {
+    this.input.placeholder = this.values.size === 0 ? "Type extension, press Enter" : "";
+  }
+}
+
+// ── Form state helpers ────────────────────────────────
+
+function getFileTypeMode() {
+  const active = ui.fileTypeToggle.querySelector(".toggle-option.active");
+  return active ? active.dataset.value : "all";
+}
+
 function updateAddActionFormState() {
   const filesChecked = ui.targetFiles.checked;
-  ui.allFilesToggle.disabled = !filesChecked;
 
   if (!filesChecked) {
-    ui.allFilesToggle.checked = false;
+    ui.fileTypeRow.style.display = "none";
     ui.extensionsRow.style.display = "none";
-    ui.extensionsInput.disabled = true;
-    ui.extensionsHelper.textContent = 'Enable "Files" to target specific file types.';
     return;
   }
 
-  ui.extensionsRow.style.display = "grid";
-  const allFilesChecked = ui.allFilesToggle.checked;
-  ui.extensionsInput.disabled = allFilesChecked;
-  ui.extensionsHelper.textContent = allFilesChecked
-    ? 'Optional while "Show on all file types" is enabled.'
-    : "Required when targeting specific file types (example: .mp4,.mkv).";
-}
-
-function getArgsPreset(mode) {
-  if (mode === "selected_item") {
-    return '"%1"';
-  }
-  if (mode === "current_folder") {
-    return '"%V"';
-  }
-  return "";
+  ui.fileTypeRow.style.display = "";
+  ui.extensionsRow.style.display = getFileTypeMode() === "specific" ? "" : "none";
 }
 
 function updateCommandPreview() {
   const executable = ui.executableInput.value.trim();
   const args = ui.argsInput.value.trim();
   if (!executable) {
-    ui.commandPreview.textContent = "Command preview: set command or executable.";
+    ui.commandPreview.textContent = "Set a command above to see the preview.";
     return;
   }
-
-  ui.commandPreview.textContent = `Command preview: ${executable}${args ? ` ${args}` : ""}`;
+  ui.commandPreview.textContent = `${executable}${args ? ` ${args}` : ""}`;
 }
 
-function updateArgModeState() {
-  const mode = ui.argMode.value;
-  const isCustom = mode === "custom";
+function updateQuickFillHighlight() {
+  const currentArgs = ui.argsInput.value;
+  for (const btn of ui.quickFillButtons) {
+    btn.classList.toggle("active", btn.dataset.args === currentArgs);
+  }
+}
 
-  ui.argsInput.readOnly = !isCustom;
-  ui.tokenRow.style.display = isCustom ? "flex" : "none";
+function resetCreateForm() {
+  document.getElementById("label").value = "";
+  ui.executableInput.value = "";
+  ui.argsInput.value = "";
+  ui.iconInput.value = "";
+  ui.targetFiles.checked = true;
+  ui.targetFolders.checked = false;
+  ui.targetFolderBackground.checked = false;
+  ui.targetDrives.checked = false;
 
-  if (!isCustom) {
-    ui.argsInput.value = getArgsPreset(mode);
+  // Reset file type toggle to "All file types"
+  for (const btn of ui.fileTypeToggle.querySelectorAll(".toggle-option")) {
+    btn.classList.toggle("active", btn.dataset.value === "all");
   }
 
+  extensionChips.clear();
+  state.customChanges = [];
+  renderCustomChanges();
+  updateAddActionFormState();
   updateCommandPreview();
+  updateQuickFillHighlight();
 }
 
 function setStatus(message, isError = false) {
@@ -755,13 +862,17 @@ function renderSuggestions() {
 }
 
 function renderCustomChanges() {
+  const hasChanges = state.customChanges.length > 0;
+  ui.pendingCard.hidden = !hasChanges;
+  ui.applyCustomBtn.disabled = !hasChanges;
   ui.customChangesList.innerHTML = "";
-  ui.applyCustomBtn.disabled = state.customChanges.length === 0;
 
-  if (state.customChanges.length === 0) {
-    ui.customChangesList.innerHTML = "<small>No generated action changes yet.</small>";
+  if (!hasChanges) {
     return;
   }
+
+  const count = state.customChanges.length;
+  ui.pendingCount.textContent = `${count} registry ${count === 1 ? "entry" : "entries"} will be created`;
 
   for (const change of state.customChanges) {
     const row = document.createElement("div");
@@ -1068,24 +1179,40 @@ ui.searchInput.addEventListener("input", () => {
 });
 
 ui.targetFiles.addEventListener("change", updateAddActionFormState);
-ui.allFilesToggle.addEventListener("change", updateAddActionFormState);
-ui.argMode.addEventListener("change", updateArgModeState);
-ui.argsInput.addEventListener("input", updateCommandPreview);
+ui.argsInput.addEventListener("input", () => {
+  updateCommandPreview();
+  updateQuickFillHighlight();
+});
 ui.executableInput.addEventListener("input", updateCommandPreview);
 
-for (const button of ui.tokenButtons) {
-  button.addEventListener("click", () => {
-    if (ui.argsInput.readOnly) {
-      return;
+// File type segmented toggle
+for (const btn of ui.fileTypeToggle.querySelectorAll(".toggle-option")) {
+  btn.addEventListener("click", () => {
+    for (const b of ui.fileTypeToggle.querySelectorAll(".toggle-option")) {
+      b.classList.toggle("active", b === btn);
     }
-    const token = button.dataset.token || "";
-    const current = ui.argsInput.value || "";
-    const needsSpace = current.length > 0 && !current.endsWith(" ");
-    ui.argsInput.value = `${current}${needsSpace ? " " : ""}${token}`;
-    ui.argsInput.focus();
-    updateCommandPreview();
+    updateAddActionFormState();
   });
 }
+
+// Quick-fill argument buttons
+for (const btn of ui.quickFillButtons) {
+  btn.addEventListener("click", () => {
+    ui.argsInput.value = btn.dataset.args;
+    ui.argsInput.focus();
+    updateCommandPreview();
+    updateQuickFillHighlight();
+  });
+}
+
+// Reset form
+ui.resetFormBtn.addEventListener("click", () => resetCreateForm());
+
+// Discard pending changes
+ui.discardChangesBtn.addEventListener("click", () => {
+  state.customChanges = [];
+  renderCustomChanges();
+});
 
 ui.browseExecutableBtn.addEventListener("click", async () => {
   try {
@@ -1127,17 +1254,16 @@ ui.customForm.addEventListener("submit", async (event) => {
       targets.push("drives");
     }
 
+    const isAllFiles = !ui.targetFiles.checked || getFileTypeMode() === "all";
+
     const request = {
       label: document.getElementById("label").value.trim(),
       executable_path: ui.executableInput.value.trim(),
       args: ui.argsInput.value.trim(),
       icon_path: ui.iconInput.value.trim() || null,
       targets,
-      extensions: ui.extensionsInput.value
-        .split(",")
-        .map((x) => x.trim())
-        .filter(Boolean),
-      apply_to_all_files: ui.targetFiles.checked && ui.allFilesToggle.checked,
+      extensions: isAllFiles ? [] : extensionChips.getValues(),
+      apply_to_all_files: isAllFiles,
       verb: null,
       scope: "current_user"
     };
@@ -1178,12 +1304,14 @@ function initNavigation() {
   switchPanel("entries");
 }
 
+const extensionChips = new ChipInput(ui.chipContainer, ui.chipInput, () => {});
+
 (async function init() {
   try {
     initNavigation();
     updateAddActionFormState();
-    updateArgModeState();
     updateCommandPreview();
+    updateQuickFillHighlight();
     setStatus("Loading entries...");
     await refreshAll();
     setStatus("Ready.");

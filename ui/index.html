@@ -90,89 +90,109 @@
 
           <!-- ── Create Panel ── -->
           <section class="panel" id="panel-create">
-            <h2>Add Action</h2>
+            <h2>Create Action</h2>
             <form id="custom-form" class="custom-form" autocomplete="off">
-              <label>
-                Action Name
-                <input type="text" id="label" value="Open with Custom Tool" required />
-              </label>
-              <span class="field-label">Where should this appear?</span>
-              <fieldset class="target-grid">
-                <label class="inline-check">
-                  <input type="checkbox" id="target-files" checked />
-                  Files
-                </label>
-                <label class="inline-check">
-                  <input type="checkbox" id="target-folders" />
-                  Folders
-                </label>
-                <label class="inline-check">
-                  <input type="checkbox" id="target-folder-background" />
-                  Folder background
-                </label>
-                <label class="inline-check">
-                  <input type="checkbox" id="target-drives" />
-                  Drives
-                </label>
-              </fieldset>
-              <label class="inline-check">
-                <input type="checkbox" id="all-files-toggle" checked />
-                Show on all file types
-              </label>
-              <label id="extensions-row">
-                File Extensions (comma-separated)
-                <input type="text" id="extensions" value=".mp4,.mkv,.mov,.avi" />
-                <small id="extensions-helper" class="helper-text"></small>
-              </label>
-              <label>
-                Command or Executable
-                <div class="path-input-row">
-                  <input
-                    type="text"
-                    id="executable"
-                    placeholder="mytool or C:\Program Files\App\app.exe"
-                    required
-                  />
-                  <button type="button" id="browse-executable-btn" class="button ghost path-btn">Browse</button>
+
+              <!-- Section A: Context Menu Entry -->
+              <div class="form-section">
+                <div class="form-section-header">Context Menu Entry</div>
+                <div class="form-section-body">
+                  <label>
+                    Action Name
+                    <input type="text" id="label" placeholder="e.g. Open in VS Code" required />
+                  </label>
+                  <label>
+                    Icon (optional)
+                    <div class="path-input-row">
+                      <input type="text" id="icon" placeholder="C:\Path\to\icon.ico" />
+                      <button type="button" id="browse-icon-btn" class="button ghost path-btn">Browse</button>
+                    </div>
+                  </label>
+                  <span class="field-label">Where should this appear?</span>
+                  <fieldset class="target-grid">
+                    <label class="inline-check">
+                      <input type="checkbox" id="target-files" checked />
+                      Files
+                    </label>
+                    <label class="inline-check">
+                      <input type="checkbox" id="target-folders" />
+                      Folders
+                    </label>
+                    <label class="inline-check" title="Right-click empty space inside a folder">
+                      <input type="checkbox" id="target-folder-background" />
+                      Inside folders
+                    </label>
+                    <label class="inline-check">
+                      <input type="checkbox" id="target-drives" />
+                      Drives
+                    </label>
+                  </fieldset>
+                  <div id="file-type-row">
+                    <span class="field-label">File types</span>
+                    <div class="file-type-toggle" id="file-type-toggle">
+                      <button type="button" class="toggle-option active" data-value="all">All file types</button>
+                      <button type="button" class="toggle-option" data-value="specific">Specific extensions</button>
+                    </div>
+                  </div>
+                  <div id="extensions-row">
+                    <span class="field-label">Extensions</span>
+                    <div class="chip-container" id="chip-container">
+                      <input type="text" class="chip-input" id="chip-input" placeholder="Type extension, press Enter" />
+                    </div>
+                  </div>
                 </div>
-                <small class="helper-text">Aliases work if they are available on PATH for Explorer.</small>
-              </label>
-              <label>
-                What should the app receive?
-                <select id="arg-mode">
-                  <option value="selected_item" selected>Selected item path (`%1`)</option>
-                  <option value="current_folder">Current folder path (`%V`)</option>
-                  <option value="none">No arguments</option>
-                  <option value="custom">Custom</option>
-                </select>
-              </label>
-              <label>
-                Arguments
-                <input type="text" id="args" value="\"%1\"" />
-                <small class="helper-text">Use Custom mode for manual arguments.</small>
-              </label>
-              <div class="token-row" id="token-row">
-                <span>Insert token:</span>
-                <button type="button" class="token-btn" data-token="%1">%1 (selected item)</button>
-                <button type="button" class="token-btn" data-token="%V">%V (current folder)</button>
-                <button type="button" class="token-btn" data-token="%v">%v (folder lowercase)</button>
               </div>
-              <small id="command-preview" class="helper-text"></small>
-              <label>
-                Optional Icon Path
-                <div class="path-input-row">
-                  <input type="text" id="icon" placeholder="C:\Path\to\icon.ico" />
-                  <button type="button" id="browse-icon-btn" class="button ghost path-btn">Browse</button>
+
+              <!-- Section B: Command -->
+              <div class="form-section">
+                <div class="form-section-header">Command</div>
+                <div class="form-section-body">
+                  <label>
+                    Executable
+                    <div class="path-input-row">
+                      <input
+                        type="text"
+                        id="executable"
+                        placeholder="e.g. code or C:\Program Files\App\app.exe"
+                        required
+                      />
+                      <button type="button" id="browse-executable-btn" class="button ghost path-btn">Browse</button>
+                    </div>
+                    <small class="helper-text">Aliases work if available on PATH for Explorer.</small>
+                  </label>
+                  <label>
+                    Arguments
+                    <input type="text" id="args" value="" placeholder='e.g. "%1"' />
+                  </label>
+                  <div class="quick-fill-row">
+                    <span>Quick fill:</span>
+                    <button type="button" class="quick-fill-btn" data-args='"%1"'>"%1" selected item</button>
+                    <button type="button" class="quick-fill-btn" data-args='"%V"'>"%V" current folder</button>
+                    <button type="button" class="quick-fill-btn" data-args="">Clear</button>
+                  </div>
+                  <div>
+                    <div class="command-preview-label">Registry command</div>
+                    <div id="command-preview" class="helper-text">Set a command above to see the preview.</div>
+                  </div>
                 </div>
-              </label>
-              <button type="submit" class="button">Generate Action Changes</button>
+              </div>
+
+              <!-- Section C: Review -->
+              <div class="form-actions">
+                <button type="submit" class="button">Preview Changes</button>
+                <button type="button" id="reset-form-btn" class="button ghost">Reset Form</button>
+              </div>
             </form>
 
-            <div>
-              <h3>Pending Action Changes</h3>
-              <div id="custom-changes-list" class="entries-list"></div>
-              <div style="margin-top: 10px;">
-                <button id="apply-custom-btn" class="button" disabled>Apply Action Changes</button>
+            <div class="pending-card" id="pending-card" hidden>
+              <div class="pending-header">
+                <h3>Pending Changes</h3>
+                <span class="pending-count" id="pending-count"></span>
+              </div>
+              <div id="custom-changes-list" class="change-list"></div>
+              <div class="pending-card-actions">
+                <button id="apply-custom-btn" class="button" disabled>Apply to Registry</button>
+                <button id="discard-changes-btn" class="button ghost">Discard</button>
               </div>
             </div>
           </section>
