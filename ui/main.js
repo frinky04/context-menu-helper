@@ -3,6 +3,8 @@ const state = {
   suggestions: [],
   customChanges: [],
   changeSets: [],
+  changeSetDetails: {},
+  expandedChangeSets: {},
   showAdvanced: false,
   searchTerm: "",
   selectedCategory: "all"
@@ -774,6 +776,122 @@ function renderCustomChanges() {
   }
 }
 
+function formatChangeCount(count) {
+  return `${count} ${count === 1 ? "change" : "changes"}`;
+}
+
+function changeKindLabel(kind) {
+  if (kind === "add") {
+    return "Added";
+  }
+  if (kind === "remove") {
+    return "Deleted";
+  }
+  if (kind === "disable") {
+    return "Hidden";
+  }
+  if (kind === "enable") {
+    return "Shown";
+  }
+  return kind;
+}
+
+function shortChangeSetId(id) {
+  if (!id) {
+    return "unknown";
+  }
+  return id.length <= 8 ? id : id.slice(0, 8);
+}
+
+function formatRelativeTime(date) {
+  const diffMs = date.getTime() - Date.now();
+  const absMs = Math.abs(diffMs);
+  const units = [
+    { name: "day", ms: 24 * 60 * 60 * 1000 },
+    { name: "hour", ms: 60 * 60 * 1000 },
+    { name: "minute", ms: 60 * 1000 },
+    { name: "second", ms: 1000 }
+  ];
+
+  for (const unit of units) {
+    if (absMs >= unit.ms || unit.name === "second") {
+      const value = Math.round(diffMs / unit.ms);
+      return new Intl.RelativeTimeFormat(undefined, { numeric: "auto" }).format(value, unit.name);
+    }
+  }
+
+  return "just now";
+}
+
+async function copyToClipboard(text) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const temp = document.createElement("textarea");
+  temp.value = text;
+  temp.setAttribute("readonly", "");
+  temp.style.position = "fixed";
+  temp.style.opacity = "0";
+  document.body.appendChild(temp);
+  temp.select();
+  const copied = document.execCommand("copy");
+  document.body.removeChild(temp);
+
+  if (!copied) {
+    throw new Error("Unable to copy to clipboard");
+  }
+}
+
+function renderChangeSetDetails(changeSetId, container) {
+  const details = state.changeSetDetails[changeSetId];
+  if (!details) {
+    container.innerHTML = "<small>Loading changes...</small>";
+    return;
+  }
+
+  if (!details.changes || details.changes.length === 0) {
+    container.innerHTML = "<small>No recorded changes in this set.</small>";
+    return;
+  }
+
+  const list = document.createElement("div");
+  list.className = "change-detail-list";
+
+  for (const change of details.changes) {
+    const entry = change.after || change.before;
+    const item = document.createElement("div");
+    item.className = "change-detail-item";
+
+    const title = document.createElement("strong");
+    title.textContent = `${changeKindLabel(change.kind)}: ${stripMnemonic(entry?.label || "Unnamed action")}`;
+
+    const context = document.createElement("small");
+    context.textContent = `Visible on ${friendlyContext(entry?.applies_to || [])}`;
+
+    const reason = document.createElement("small");
+    reason.textContent = `Reason: ${change.reason || "User action"}`;
+
+    item.append(title, context, reason);
+
+    if (entry?.key_path) {
+      const keyPath = document.createElement("small");
+      keyPath.textContent = "Registry key: ";
+      const keyPathValue = document.createElement("span");
+      keyPathValue.className = "mono";
+      keyPathValue.textContent = entry.key_path;
+      keyPath.appendChild(keyPathValue);
+      item.appendChild(keyPath);
+    }
+
+    list.appendChild(item);
+  }
+
+  container.innerHTML = "";
+  container.appendChild(list);
+}
+
 function renderChangeSets() {
   ui.changeSetsList.innerHTML = "";
   if (state.changeSets.length === 0) {
@@ -783,19 +901,80 @@ function renderChangeSets() {
 
   for (const changeSet of state.changeSets) {
     const row = document.createElement("div");
-    row.className = "entry";
+    row.className = "entry change-set-entry";
 
-    const createdAt = new Date(changeSet.created_at).toLocaleString();
     const left = document.createElement("div");
-    left.innerHTML = `
-      <strong>${changeSet.id}</strong>
-      <small>${changeSet.change_count} changes | ${createdAt}</small>
-    `;
+    const createdAt = new Date(changeSet.created_at);
+    const absoluteTime = createdAt.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+    const relativeTime = formatRelativeTime(createdAt);
+
+    const title = document.createElement("strong");
+    title.textContent = `Change Set ${shortChangeSetId(changeSet.id)}`;
+
+    const actionCount = document.createElement("small");
+    actionCount.textContent = `Actions: ${formatChangeCount(changeSet.change_count)}`;
+
+    const created = document.createElement("small");
+    created.textContent = `Created: ${absoluteTime} (${relativeTime})`;
+
+    const idLine = document.createElement("small");
+    idLine.textContent = "ID: ";
+    const idValue = document.createElement("span");
+    idValue.className = "mono";
+    idValue.textContent = changeSet.id;
+    idLine.appendChild(idValue);
+
+    left.append(title, actionCount, created, idLine);
+
+    const actions = document.createElement("div");
+    actions.className = "entry-actions";
+
+    const copyId = document.createElement("button");
+    copyId.className = "button ghost";
+    copyId.textContent = "Copy ID";
+    copyId.onclick = async () => {
+      try {
+        await copyToClipboard(changeSet.id);
+        setStatus(`Copied change set ID: ${shortChangeSetId(changeSet.id)}`);
+      } catch (error) {
+        setStatus(error.message || String(error), true);
+      }
+    };
+
+    const detailsButton = document.createElement("button");
+    detailsButton.className = "button ghost";
+    const isExpanded = !!state.expandedChangeSets[changeSet.id];
+    detailsButton.textContent = isExpanded ? "Hide Changes" : "What Changed";
+    detailsButton.onclick = async () => {
+      const currentlyExpanded = !!state.expandedChangeSets[changeSet.id];
+      state.expandedChangeSets[changeSet.id] = !currentlyExpanded;
+
+      if (!currentlyExpanded && !state.changeSetDetails[changeSet.id]) {
+        try {
+          const details = await invoke("get_change_set", { changeSetId: changeSet.id });
+          state.changeSetDetails[changeSet.id] = details;
+        } catch (error) {
+          state.expandedChangeSets[changeSet.id] = false;
+          setStatus(error.message || String(error), true);
+        }
+      }
+
+      renderChangeSets();
+    };
 
     const button = document.createElement("button");
     button.className = "button danger";
     button.textContent = "Rollback";
     button.onclick = async () => {
+      const confirmed = window.confirm(
+        `Rollback ${formatChangeCount(changeSet.change_count)} from "${shortChangeSetId(
+          changeSet.id
+        )}"?\n\nCreated ${absoluteTime}.`
+      );
+      if (!confirmed) {
+        return;
+      }
+
       try {
         setStatus(`Rolling back ${changeSet.id}...`);
         const result = await invoke("rollback", { changeSetId: changeSet.id });
@@ -806,7 +985,16 @@ function renderChangeSets() {
       }
     };
 
-    row.append(left, button);
+    actions.append(copyId, detailsButton, button);
+    row.append(left, actions);
+
+    if (isExpanded) {
+      const details = document.createElement("div");
+      details.className = "change-set-details";
+      renderChangeSetDetails(changeSet.id, details);
+      row.appendChild(details);
+    }
+
     ui.changeSetsList.appendChild(row);
   }
 }
@@ -821,6 +1009,18 @@ async function refreshAll() {
   state.entries = entries;
   state.suggestions = suggestions;
   state.changeSets = changeSets;
+
+  const validIds = new Set(changeSets.map((changeSet) => changeSet.id));
+  for (const id of Object.keys(state.changeSetDetails)) {
+    if (!validIds.has(id)) {
+      delete state.changeSetDetails[id];
+    }
+  }
+  for (const id of Object.keys(state.expandedChangeSets)) {
+    if (!validIds.has(id)) {
+      delete state.expandedChangeSets[id];
+    }
+  }
 
   renderEntries();
   renderSuggestions();

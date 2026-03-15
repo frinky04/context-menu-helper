@@ -52,6 +52,7 @@ The desktop app currently expects these backend commands to remain stable unless
 - `apply_changes`
 - `rollback`
 - `list_change_sets`
+- `get_change_set`
 
 Any command rename or payload change requires synchronized updates in:
 

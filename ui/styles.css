@@ -167,6 +167,33 @@ body {
   justify-content: flex-end;
 }
 
+.change-set-entry {
+  flex-wrap: wrap;
+}
+
+.change-set-entry > div:first-child {
+  flex: 1 1 420px;
+}
+
+.change-set-details {
+  margin-top: 10px;
+  border-top: 1px solid #31463d;
+  padding-top: 10px;
+  width: 100%;
+}
+
+.change-detail-list {
+  display: grid;
+  gap: 8px;
+}
+
+.change-detail-item {
+  border: 1px solid #365345;
+  background: #16231d;
+  border-radius: 8px;
+  padding: 8px;
+}
+
 .entry pre {
   margin: 6px 0 0;
   font-family: "JetBrains Mono", Consolas, monospace;
@@ -179,6 +206,12 @@ body {
   display: block;
   margin-top: 4px;
   color: var(--muted);
+}
+
+.mono {
+  font-family: "JetBrains Mono", Consolas, monospace;
+  color: #cbe6d8;
+  word-break: break-all;
 }
 
 .button {

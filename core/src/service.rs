@@ -135,6 +135,12 @@ impl ContextMenuService {
     pub fn list_change_sets(&self) -> Result<Vec<ChangeSetSummary>> {
         self.log_store.list()
     }
+
+    pub fn get_change_set(&self, change_set_id: &str) -> Result<ChangeSetRecord> {
+        self.log_store
+            .load(change_set_id)?
+            .ok_or_else(|| anyhow!("Change set not found: {change_set_id}"))
+    }
 }
 
 fn collect_key_paths(changes: &[ProposedChange]) -> Vec<String> {
@@ -208,5 +214,39 @@ mod tests {
 
         let rescanned = provider.scan_entries().expect("scan");
         assert_eq!(rescanned[0].state, EntryState::Enabled);
+    }
+
+    #[test]
+    fn can_load_change_set_details() {
+        let entry = MenuEntry {
+            id: "entry-1".to_string(),
+            label: "Open with Tool".to_string(),
+            scope: EntryScope::CurrentUser,
+            key_path: "HKCU\\Software\\Classes\\*\\shell\\tool".to_string(),
+            icon: None,
+            command: Some("tool.exe \"%1\"".to_string()),
+            applies_to: vec!["file".to_string()],
+            state: EntryState::Enabled,
+        };
+
+        let provider = Arc::new(MockRegistryProvider::default());
+        let logs = Arc::new(JsonLogStore::new(tempdir().expect("tempdir").path()));
+        let service = ContextMenuService::new(provider, logs);
+
+        let change = ProposedChange {
+            id: "change-1".to_string(),
+            kind: ChangeKind::Add,
+            before: None,
+            after: Some(entry),
+            risk_level: RiskLevel::Medium,
+            reason: "test add".to_string(),
+        };
+
+        let result = service.apply_changes(vec![change]).expect("apply");
+        let change_set_id = result.change_set_id.expect("change set id");
+
+        let details = service.get_change_set(&change_set_id).expect("details");
+        assert_eq!(details.id, change_set_id);
+        assert_eq!(details.changes.len(), 1);
     }
 }

@@ -3,8 +3,8 @@
 use std::{path::PathBuf, sync::Arc};
 
 use context_menu_core::{
-    ApplyResult, ContextMenuService, CreateActionRequest, JsonLogStore, MenuEntry, ProposedChange,
-    WindowsRegistryProvider,
+    ApplyResult, ChangeSetRecord, ContextMenuService, CreateActionRequest, JsonLogStore, MenuEntry,
+    ProposedChange, WindowsRegistryProvider,
 };
 use rfd::FileDialog;
 use tauri::{Manager, State};
@@ -90,6 +90,17 @@ fn list_change_sets(
 }
 
 #[tauri::command]
+fn get_change_set(
+    change_set_id: String,
+    state: State<'_, AppState>,
+) -> Result<ChangeSetRecord, String> {
+    state
+        .service
+        .get_change_set(&change_set_id)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
 fn pick_path(kind: String) -> Result<Option<String>, String> {
     let mut dialog = FileDialog::new();
     match kind.as_str() {
@@ -137,6 +148,7 @@ fn main() {
             apply_changes,
             rollback,
             list_change_sets,
+            get_change_set,
             pick_path
         ])
         .run(tauri::generate_context!())
