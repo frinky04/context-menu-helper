@@ -8,7 +8,7 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  release:
     name: Build & Release
     runs-on: windows-latest
     steps:
@@ -30,9 +30,6 @@ jobs:
 
       - name: Run tests
         run: cargo test --workspace
-
-      - name: Build release binary
-        run: cargo build --release -p context_menu_helper_desktop
 
       - name: Bundle with Tauri
         uses: tauri-apps/tauri-action@v0
