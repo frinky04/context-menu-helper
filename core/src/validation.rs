@@ -38,11 +38,10 @@ pub fn validate_create_action_request(payload: &CreateActionRequest) -> Result<(
         }
     }
 
-    if let Some(icon) = &payload.icon_path {
-        if !icon.trim().is_empty() && !Path::new(icon).exists() {
+    if let Some(icon) = &payload.icon_path
+        && !icon.trim().is_empty() && !Path::new(icon).exists() {
             bail!("Icon path does not exist: {icon}");
         }
-    }
 
     Ok(())
 }
