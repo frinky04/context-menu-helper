@@ -85,7 +85,7 @@ body {
 .inline-controls {
   margin: 0 0 10px;
   display: grid;
-  gap: 6px;
+  gap: 8px;
 }
 
 .toggle {
@@ -100,6 +100,20 @@ body {
   width: 16px;
   height: 16px;
   margin: 0;
+}
+
+.search-input {
+  width: 100%;
+}
+
+.helper-text {
+  color: #89a89a;
+}
+
+.summary-text {
+  margin: 0 0 10px;
+  color: #9eb8ac;
+  font-size: 0.9rem;
 }
 
 .entry {
@@ -122,6 +136,8 @@ body {
 }
 
 .entry small {
+  display: block;
+  margin-top: 4px;
   color: var(--muted);
 }
 

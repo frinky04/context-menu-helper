@@ -33,7 +33,15 @@
             <input type="checkbox" id="show-advanced-toggle" />
             Show advanced (system and maintenance entries)
           </label>
+          <input
+            type="text"
+            id="search-input"
+            class="search-input"
+            placeholder="Search actions (e.g. git, rider, alacritty)"
+          />
+          <small class="helper-text">Simple view hides system maintenance entries and registry details.</small>
         </div>
+        <p id="entries-summary" class="summary-text"></p>
         <div id="entries-list" class="entries-list"></div>
       </section>
 
