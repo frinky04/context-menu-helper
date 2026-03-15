@@ -159,6 +159,22 @@ html, body {
   background: var(--bg-surface);
   font-size: 12px;
   flex-shrink: 0;
+  transition: background 300ms ease, border-color 300ms ease;
+}
+
+.status-bar.status-error {
+  background: var(--danger-subtle);
+  border-bottom-color: rgba(224, 82, 82, 0.25);
+}
+
+.status-bar.status-success {
+  background: rgba(63, 173, 110, 0.08);
+  border-bottom-color: rgba(63, 173, 110, 0.2);
+}
+
+.status-bar.status-working {
+  background: var(--accent-subtle);
+  border-bottom-color: rgba(29, 122, 237, 0.2);
 }
 
 #status-text {
@@ -169,6 +185,19 @@ html, body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  transition: color 300ms ease;
+}
+
+.status-error #status-text {
+  color: var(--danger);
+}
+
+.status-success #status-text {
+  color: var(--success);
+}
+
+.status-working #status-text {
+  color: var(--accent);
 }
 
 .status-bar .toggle {

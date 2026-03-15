@@ -132,6 +132,7 @@ fn build_service(app: &tauri::AppHandle) -> anyhow::Result<ContextMenuService> {
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let service = build_service(app.handle())?;
             app.manage(AppState {

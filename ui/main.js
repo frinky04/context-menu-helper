@@ -219,9 +219,28 @@ function resetCreateForm() {
   updateQuickFillHighlight();
 }
 
+let _statusTimer = null;
+const _statusBar = document.querySelector(".status-bar");
+
 function setStatus(message, isError = false) {
+  if (_statusTimer) {
+    clearTimeout(_statusTimer);
+    _statusTimer = null;
+  }
+
   ui.status.textContent = message;
-  ui.status.style.color = isError ? "#e05252" : "#888888";
+  _statusBar.classList.remove("status-error", "status-success", "status-working");
+
+  if (isError) {
+    _statusBar.classList.add("status-error");
+  } else if (message.endsWith("...")) {
+    _statusBar.classList.add("status-working");
+  } else if (message !== "Ready." && message !== "Refreshed.") {
+    _statusBar.classList.add("status-success");
+    _statusTimer = setTimeout(() => {
+      _statusBar.classList.remove("status-success");
+    }, 4000);
+  }
 }
 
 async function invoke(command, payload = {}) {
@@ -233,6 +252,14 @@ async function invoke(command, payload = {}) {
     throw new Error("Tauri runtime not found. Run this app through Tauri.");
   }
   return invokeFn(command, payload);
+}
+
+async function nativeConfirm(message, title) {
+  const api = window.__TAURI__?.dialog;
+  if (api?.ask) {
+    return api.ask(message, { title, kind: "warning" });
+  }
+  return window.confirm(message);
 }
 
 function stripMnemonic(label) {
@@ -812,7 +839,7 @@ function renderEntries() {
       remove.className = "button danger";
       remove.textContent = "Delete";
       remove.onclick = async () => {
-        const confirmed = window.confirm(buildDeleteWarning(group));
+        const confirmed = await nativeConfirm(buildDeleteWarning(group), "Delete Action");
         if (!confirmed) {
           return;
         }
@@ -1078,10 +1105,11 @@ function renderChangeSets() {
     button.className = "button danger";
     button.textContent = "Rollback";
     button.onclick = async () => {
-      const confirmed = window.confirm(
+      const confirmed = await nativeConfirm(
         `Rollback ${formatChangeCount(changeSet.change_count)} from "${shortChangeSetId(
           changeSet.id
-        )}"?\n\nCreated ${absoluteTime}.`
+        )}"?\n\nCreated ${absoluteTime}.`,
+        "Rollback Changes"
       );
       if (!confirmed) {
         return;
