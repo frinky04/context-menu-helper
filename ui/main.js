@@ -825,14 +825,19 @@ function renderEntries() {
       : `Showing ${groups.length} of ${allGroups.length} actions in ${selectedLabel}`;
 
   if (groups.length === 0) {
-    ui.entriesList.innerHTML = "<small>No actions match your current view.</small>";
+    ui.entriesList.innerHTML = `<div class="empty-state">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+      <p>No actions match your current filters.</p>
+    </div>`;
     return;
   }
 
   groups.forEach((group, index) => {
     const row = document.createElement("div");
-    row.className = "entry";
-    row.style.setProperty("--i", Math.min(index, 15));
+    const isEnabled = group.state === "enabled";
+    row.className = `entry ${isEnabled ? "entry-visible" : "entry-hidden"}`;
 
     const icon = createEntryIcon(group.label);
 
@@ -856,16 +861,22 @@ function renderEntries() {
 
     left.append(title, meta, detail);
 
+    const entryMeta = document.createElement("div");
+    entryMeta.className = "entry-meta";
+
     const categoryBadge = document.createElement("span");
     categoryBadge.className = "category-badge";
     categoryBadge.textContent = CATEGORY_META[group.category] || "Other";
-    left.append(categoryBadge);
+    entryMeta.append(categoryBadge);
 
     if (group.entries.length > 1) {
-      const groupedCount = document.createElement("small");
-      groupedCount.textContent = `${group.entries.length} linked registry entries`;
-      left.append(groupedCount);
+      const groupedCount = document.createElement("span");
+      groupedCount.className = "category-badge";
+      groupedCount.textContent = `${group.entries.length} linked`;
+      entryMeta.append(groupedCount);
     }
+
+    left.append(entryMeta);
 
     if (state.showAdvanced) {
       const advancedMeta = document.createElement("small");
@@ -882,8 +893,7 @@ function renderEntries() {
     actions.className = "entry-actions";
 
     const toggle = document.createElement("button");
-    const isEnabled = group.state === "enabled";
-    toggle.className = isEnabled ? "button warn" : "button";
+    toggle.className = isEnabled ? "button warn sm" : "button sm";
     toggle.textContent = isEnabled ? "Hide" : "Show";
     toggle.onclick = async () => {
       try {
@@ -900,7 +910,7 @@ function renderEntries() {
 
     if (canDeleteGroup(group)) {
       const remove = document.createElement("button");
-      remove.className = "button danger";
+      remove.className = "button danger sm";
       remove.textContent = "Delete";
       remove.onclick = async () => {
         const confirmed = await nativeConfirm(buildDeleteWarning(group), "Delete Action");
@@ -930,14 +940,19 @@ function renderSuggestions() {
   ui.applySuggestionsBtn.disabled = suggestions.length === 0;
 
   if (suggestions.length === 0) {
-    ui.suggestionsList.innerHTML = "<small>No recommended actions for this view.</small>";
+    ui.suggestionsList.innerHTML = `<div class="empty-state">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+        <polyline points="22 4 12 14.01 9 11.01"/>
+      </svg>
+      <p>No recommendations for this view.</p>
+    </div>`;
     return;
   }
 
   suggestions.forEach((change, index) => {
     const row = document.createElement("div");
     row.className = "entry";
-    row.style.setProperty("--i", Math.min(index, 15));
 
     const entry = change.after || change.before;
     const label = entry ? stripMnemonic(entry.label) : "Suggested action";
@@ -1099,7 +1114,13 @@ function renderChangeSetDetails(changeSetId, container) {
 function renderChangeSets() {
   ui.changeSetsList.innerHTML = "";
   if (state.changeSets.length === 0) {
-    ui.changeSetsList.innerHTML = "<small>No saved change sets yet.</small>";
+    ui.changeSetsList.innerHTML = `<div class="empty-state">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+        <polyline points="12 7 12 12 16 14"/>
+      </svg>
+      <p>No changes recorded yet.<br>Changes you make will appear here for rollback.</p>
+    </div>`;
     return;
   }
 

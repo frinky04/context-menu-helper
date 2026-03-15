@@ -67,12 +67,18 @@
           <section class="panel active" id="panel-entries">
             <h2>Detected Entries</h2>
             <div class="inline-controls">
-              <input
-                type="text"
-                id="search-input"
-                class="search-input"
-                placeholder="Search actions..."
-              />
+              <div class="search-wrapper">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <input
+                  type="text"
+                  id="search-input"
+                  class="search-input"
+                  placeholder="Search actions..."
+                />
+                <span class="search-shortcut">Ctrl+F</span>
+              </div>
             </div>
             <p id="entries-summary" class="summary-text"></p>
             <div id="category-filters" class="category-filters"></div>
@@ -82,7 +88,7 @@
             <div class="panel-subsection">
               <h3>Recommended Actions</h3>
               <div id="suggestions-list" class="entries-list"></div>
-              <div style="margin-top: 10px;">
+              <div style="margin-top: 14px;">
                 <button id="apply-suggestions-btn" class="button" disabled>Apply Suggestions</button>
               </div>
             </div>
