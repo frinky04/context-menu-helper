@@ -18,17 +18,19 @@ mod windows {
     use super::*;
     use std::{
         collections::{BTreeMap, BTreeSet},
-        iter,
+        io, iter,
         path::Path,
     };
 
     use anyhow::Context;
     use winreg::{
-        HKEY, RegKey,
-        enums::{HKEY_CLASSES_ROOT, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE},
+        HKEY, RegKey, RegValue,
+        enums::{HKEY_CLASSES_ROOT, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, RegType},
     };
 
-    use crate::models::{ChangeKind, EntryScope, EntryState};
+    use crate::models::{
+        ChangeKind, EntryScope, EntryState, RegistryKeySnapshot, RegistryValueSnapshot,
+    };
 
     const DIRECT_SHELL_PATHS: &[(&str, &str)] = &[
         ("HKCU", r"Software\Classes\Directory\Background\shell"),
@@ -55,7 +57,7 @@ mod windows {
 
     impl RegistryProvider for WindowsRegistryProvider {
         fn scan_entries(&self) -> Result<Vec<MenuEntry>> {
-            let mut entries = Vec::new();
+            let mut scanned_entries = Vec::new();
 
             for (hive_name, base_path) in DIRECT_SHELL_PATHS {
                 let hive = open_hive(hive_name)?;
@@ -65,11 +67,16 @@ mod windows {
                 };
 
                 if base_path.ends_with(r"SystemFileAssociations") {
-                    scan_system_file_associations(hive_name, base_path, &base, &mut entries)?;
+                    scan_system_file_associations(
+                        hive_name,
+                        base_path,
+                        &base,
+                        &mut scanned_entries,
+                    )?;
                     continue;
                 }
 
-                scan_shell_verbs(hive_name, base_path, &base, &mut entries)?;
+                scan_shell_verbs(hive_name, base_path, &base, &mut scanned_entries)?;
 
                 if let Some(prefix) = base_path.strip_suffix(r"\shell") {
                     let handlers_path = format!(r"{prefix}\shellex\ContextMenuHandlers");
@@ -78,12 +85,28 @@ mod windows {
                             hive_name,
                             &handlers_path,
                             &handler_root,
-                            &mut entries,
+                            &mut scanned_entries,
                         )?;
                     }
                 }
             }
 
+            let mut by_identity = BTreeMap::new();
+            for entry in scanned_entries {
+                let identity = merged_identity(&entry.key_path);
+                match by_identity.entry(identity) {
+                    std::collections::btree_map::Entry::Vacant(slot) => {
+                        slot.insert(entry);
+                    }
+                    std::collections::btree_map::Entry::Occupied(mut occupied) => {
+                        if should_prefer_entry(&entry, occupied.get()) {
+                            occupied.insert(entry);
+                        }
+                    }
+                }
+            }
+
+            let mut entries: Vec<MenuEntry> = by_identity.into_values().collect();
             entries.sort_by(|a, b| a.label.cmp(&b.label));
             Ok(entries)
         }
@@ -139,7 +162,11 @@ mod windows {
                     }
                 }
                 ChangeKind::Remove => {
-                    let _ = hive_key.delete_subkey_all(subpath);
+                    if let Err(err) = hive_key.delete_subkey_all(subpath)
+                        && err.kind() != io::ErrorKind::NotFound
+                    {
+                        return Err(err.into());
+                    }
                 }
             }
 
@@ -149,18 +176,22 @@ mod windows {
         fn restore_backup(&self, backup: &KeyBackup) -> Result<()> {
             let (hive, subpath) = parse_path(&backup.key_path)?;
             let hive_key = open_hive(hive)?;
-            let _ = hive_key.delete_subkey_all(subpath);
+            if let Err(err) = hive_key.delete_subkey_all(subpath)
+                && err.kind() != io::ErrorKind::NotFound
+            {
+                return Err(err.into());
+            }
 
             if !backup.existed {
                 return Ok(());
             }
 
+            let snapshot = backup
+                .snapshot
+                .as_ref()
+                .ok_or_else(|| anyhow!("missing snapshot for existing backup"))?;
             let (key, _) = hive_key.create_subkey(subpath)?;
-            write_values(&key, &backup.values)?;
-            if !backup.command_values.is_empty() {
-                let (command_key, _) = key.create_subkey("command")?;
-                write_values(&command_key, &backup.command_values)?;
-            }
+            restore_key_tree(&key, snapshot)?;
 
             Ok(())
         }
@@ -319,55 +350,109 @@ mod windows {
                 return Ok(KeyBackup {
                     key_path: path,
                     existed: false,
-                    values: BTreeMap::new(),
-                    command_values: BTreeMap::new(),
+                    snapshot: None,
                 });
             }
         };
 
-        let values = read_all_string_values(&key)?;
-        let command_values = key
-            .open_subkey("command")
-            .ok()
-            .map(|k| read_all_string_values(&k))
-            .transpose()?
-            .unwrap_or_default();
+        let snapshot = snapshot_key_tree(&key)?;
 
         Ok(KeyBackup {
             key_path: path,
             existed: true,
-            values,
-            command_values,
+            snapshot: Some(snapshot),
         })
     }
 
-    fn read_all_string_values(key: &RegKey) -> Result<BTreeMap<String, String>> {
-        let mut out = BTreeMap::new();
+    fn snapshot_key_tree(key: &RegKey) -> Result<RegistryKeySnapshot> {
+        let mut values = Vec::new();
 
-        for (name, _) in key.enum_values().flatten() {
-            if let Ok(value) = key.get_value::<String, _>(&name) {
-                out.insert(name, value);
-            }
+        for value_result in key.enum_values() {
+            let (name, value) = value_result?;
+            values.push(RegistryValueSnapshot {
+                name,
+                value_type: reg_type_to_u32(value.vtype),
+                data: value.bytes,
+            });
         }
 
-        if !out.contains_key("") {
-            if let Ok(default) = key.get_value::<String, _>("") {
-                out.insert("".to_string(), default);
-            }
+        if !values.iter().any(|value| value.name.is_empty())
+            && let Ok(default_value) = key.get_raw_value("")
+        {
+            values.push(RegistryValueSnapshot {
+                name: String::new(),
+                value_type: reg_type_to_u32(default_value.vtype),
+                data: default_value.bytes,
+            });
         }
 
-        Ok(out)
+        values.sort_by(|a, b| a.name.cmp(&b.name));
+
+        let mut subkeys = BTreeMap::new();
+        for key_name_result in key.enum_keys() {
+            let subkey_name = key_name_result?;
+            let subkey = key.open_subkey(&subkey_name)?;
+            subkeys.insert(subkey_name, snapshot_key_tree(&subkey)?);
+        }
+
+        Ok(RegistryKeySnapshot { values, subkeys })
     }
 
-    fn write_values(key: &RegKey, values: &BTreeMap<String, String>) -> Result<()> {
-        for (name, value) in values {
-            if name.is_empty() {
-                key.set_value("", value)?;
+    fn restore_key_tree(key: &RegKey, snapshot: &RegistryKeySnapshot) -> Result<()> {
+        for value in &snapshot.values {
+            let raw = RegValue {
+                vtype: reg_type_from_u32(value.value_type)?,
+                bytes: value.data.clone(),
+            };
+            if value.name.is_empty() {
+                key.set_raw_value("", &raw)?;
             } else {
-                key.set_value(name, value)?;
+                key.set_raw_value(&value.name, &raw)?;
             }
         }
+
+        for (name, child) in &snapshot.subkeys {
+            let (subkey, _) = key.create_subkey(name)?;
+            restore_key_tree(&subkey, child)?;
+        }
+
         Ok(())
+    }
+
+    fn reg_type_to_u32(value: RegType) -> u32 {
+        value as u32
+    }
+
+    fn reg_type_from_u32(value: u32) -> Result<RegType> {
+        match value {
+            0 => Ok(RegType::REG_NONE),
+            1 => Ok(RegType::REG_SZ),
+            2 => Ok(RegType::REG_EXPAND_SZ),
+            3 => Ok(RegType::REG_BINARY),
+            4 => Ok(RegType::REG_DWORD),
+            5 => Ok(RegType::REG_DWORD_BIG_ENDIAN),
+            6 => Ok(RegType::REG_LINK),
+            7 => Ok(RegType::REG_MULTI_SZ),
+            8 => Ok(RegType::REG_RESOURCE_LIST),
+            9 => Ok(RegType::REG_FULL_RESOURCE_DESCRIPTOR),
+            10 => Ok(RegType::REG_RESOURCE_REQUIREMENTS_LIST),
+            11 => Ok(RegType::REG_QWORD),
+            _ => Err(anyhow!(
+                "unsupported registry value type in backup: {value}"
+            )),
+        }
+    }
+
+    fn merged_identity(key_path: &str) -> String {
+        let lower = key_path.to_ascii_lowercase();
+        if let Some(suffix) = lower.strip_prefix(r"hkcr\") {
+            return format!(r"hkcu\software\classes\{suffix}");
+        }
+        lower
+    }
+
+    fn should_prefer_entry(candidate: &MenuEntry, existing: &MenuEntry) -> bool {
+        candidate.scope == EntryScope::CurrentUser && existing.scope != EntryScope::CurrentUser
     }
 
     fn infer_applies_to(path: &str) -> Vec<String> {

@@ -60,8 +60,20 @@ pub struct ProposedChange {
 pub struct KeyBackup {
     pub key_path: String,
     pub existed: bool,
-    pub values: BTreeMap<String, String>,
-    pub command_values: BTreeMap<String, String>,
+    pub snapshot: Option<RegistryKeySnapshot>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RegistryKeySnapshot {
+    pub values: Vec<RegistryValueSnapshot>,
+    pub subkeys: BTreeMap<String, RegistryKeySnapshot>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RegistryValueSnapshot {
+    pub name: String,
+    pub value_type: u32,
+    pub data: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

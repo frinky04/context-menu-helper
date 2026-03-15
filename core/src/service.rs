@@ -12,6 +12,7 @@ use crate::{
     },
     registry::{RegistryProvider, SharedRegistryProvider},
     templates::{build_create_action_changes, build_toggle_change, suggest_disable_git_bash},
+    validation::validate_change_batch,
 };
 
 pub struct ContextMenuService {
@@ -70,8 +71,17 @@ impl ContextMenuService {
             });
         }
 
+        validate_change_batch(&changes)?;
         let key_paths = collect_key_paths(&changes);
         let backups = self.provider.snapshot_keys(&key_paths)?;
+        let change_set_id = Uuid::new_v4().to_string();
+        let record = ChangeSetRecord {
+            id: change_set_id.clone(),
+            created_at: Utc::now(),
+            changes: changes.clone(),
+            backups: backups.clone(),
+        };
+        self.log_store.save(&record)?;
 
         let mut applied = Vec::new();
         let mut failed = Vec::new();
@@ -85,28 +95,16 @@ impl ContextMenuService {
             }
         }
 
-        let mut change_set_id = None;
-        if !applied.is_empty() {
-            let id = Uuid::new_v4().to_string();
-            let record = ChangeSetRecord {
-                id: id.clone(),
-                created_at: Utc::now(),
-                changes,
-                backups: backups.clone(),
-            };
-            self.log_store.save(&record)?;
-            change_set_id = Some(id);
-        }
-
         Ok(ApplyResult {
             backups,
             applied,
             failed,
-            change_set_id,
+            change_set_id: Some(change_set_id),
         })
     }
 
     pub fn rollback(&self, change_set_id: &str) -> Result<ApplyResult> {
+        validate_change_set_id(change_set_id)?;
         let record = self
             .log_store
             .load(change_set_id)?
@@ -137,6 +135,7 @@ impl ContextMenuService {
     }
 
     pub fn get_change_set(&self, change_set_id: &str) -> Result<ChangeSetRecord> {
+        validate_change_set_id(change_set_id)?;
         self.log_store
             .load(change_set_id)?
             .ok_or_else(|| anyhow!("Change set not found: {change_set_id}"))
@@ -157,16 +156,26 @@ fn collect_key_paths(changes: &[ProposedChange]) -> Vec<String> {
     out
 }
 
+fn validate_change_set_id(change_set_id: &str) -> Result<()> {
+    Uuid::parse_str(change_set_id)
+        .map_err(|_| anyhow!("Invalid change set id: {change_set_id}"))?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
+    use anyhow::{Result, anyhow};
     use tempfile::tempdir;
 
     use crate::{
-        log_store::JsonLogStore,
+        log_store::{ChangeLogStore, JsonLogStore},
         mock_registry::MockRegistryProvider,
-        models::{ChangeKind, EntryScope, EntryState, MenuEntry, ProposedChange, RiskLevel},
+        models::{
+            ChangeKind, ChangeSetRecord, ChangeSetSummary, EntryScope, EntryState, MenuEntry,
+            ProposedChange, RiskLevel,
+        },
         registry::RegistryProvider,
     };
 
@@ -248,5 +257,66 @@ mod tests {
         let details = service.get_change_set(&change_set_id).expect("details");
         assert_eq!(details.id, change_set_id);
         assert_eq!(details.changes.len(), 1);
+    }
+
+    struct FailingLogStore;
+
+    impl ChangeLogStore for FailingLogStore {
+        fn save(&self, _record: &ChangeSetRecord) -> Result<()> {
+            Err(anyhow!("save failed"))
+        }
+
+        fn load(&self, _id: &str) -> Result<Option<ChangeSetRecord>> {
+            Ok(None)
+        }
+
+        fn list(&self) -> Result<Vec<ChangeSetSummary>> {
+            Ok(vec![])
+        }
+    }
+
+    #[test]
+    fn does_not_apply_when_log_save_fails() {
+        let entry = MenuEntry {
+            id: "git_shell".to_string(),
+            label: "Open Git Bash Here".to_string(),
+            scope: EntryScope::CurrentUser,
+            key_path: "HKCU\\Software\\Classes\\Directory\\Background\\shell\\git_shell"
+                .to_string(),
+            icon: None,
+            command: Some("git-bash.exe".to_string()),
+            applies_to: vec!["directory_background".to_string()],
+            state: EntryState::Enabled,
+        };
+
+        let provider = Arc::new(MockRegistryProvider::with_entries(vec![entry.clone()]));
+        let logs = Arc::new(FailingLogStore);
+        let service = ContextMenuService::new(provider.clone(), logs);
+
+        let change = ProposedChange {
+            id: "change-1".to_string(),
+            kind: ChangeKind::Disable,
+            before: Some(entry.clone()),
+            after: Some(MenuEntry {
+                state: EntryState::Disabled,
+                ..entry
+            }),
+            risk_level: RiskLevel::Low,
+            reason: "test".to_string(),
+        };
+
+        assert!(service.apply_changes(vec![change]).is_err());
+        let scanned = provider.scan_entries().expect("scan");
+        assert_eq!(scanned[0].state, EntryState::Enabled);
+    }
+
+    #[test]
+    fn rejects_invalid_change_set_ids() {
+        let provider = Arc::new(MockRegistryProvider::default());
+        let logs = Arc::new(JsonLogStore::new(tempdir().expect("tempdir").path()));
+        let service = ContextMenuService::new(provider, logs);
+
+        assert!(service.get_change_set("../escape").is_err());
+        assert!(service.rollback("../escape").is_err());
     }
 }

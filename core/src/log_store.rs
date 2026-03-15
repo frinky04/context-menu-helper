@@ -5,6 +5,7 @@ use std::{
 };
 
 use anyhow::{Context, Result};
+use uuid::Uuid;
 
 use crate::models::{ChangeSetRecord, ChangeSetSummary};
 
@@ -39,8 +40,11 @@ impl JsonLogStore {
         Ok(())
     }
 
-    fn path_for(&self, id: &str) -> PathBuf {
-        self.base_path.join(format!("{id}.json"))
+    fn path_for(&self, id: &str) -> Result<PathBuf> {
+        let normalized = Uuid::parse_str(id)
+            .map_err(|_| anyhow::anyhow!("Invalid change set id: {id}"))?
+            .to_string();
+        Ok(self.base_path.join(format!("{normalized}.json")))
     }
 }
 
@@ -48,7 +52,7 @@ impl ChangeLogStore for JsonLogStore {
     fn save(&self, record: &ChangeSetRecord) -> Result<()> {
         let _guard = self.lock.lock().expect("log lock poisoned");
         self.ensure_dir()?;
-        let path = self.path_for(&record.id);
+        let path = self.path_for(&record.id)?;
         let contents = serde_json::to_string_pretty(record)?;
         fs::write(&path, contents)
             .with_context(|| format!("Failed to persist change set log: {}", path.display()))?;
@@ -58,7 +62,7 @@ impl ChangeLogStore for JsonLogStore {
     fn load(&self, id: &str) -> Result<Option<ChangeSetRecord>> {
         let _guard = self.lock.lock().expect("log lock poisoned");
         self.ensure_dir()?;
-        let path = self.path_for(id);
+        let path = self.path_for(id)?;
         if !path.exists() {
             return Ok(None);
         }
@@ -113,24 +117,34 @@ mod tests {
     fn persists_and_loads_log_records() {
         let tmp = tempfile::tempdir().expect("tempdir");
         let store = JsonLogStore::new(tmp.path());
+        let id = "11111111-1111-1111-1111-111111111111";
 
         let record = ChangeSetRecord {
-            id: "abc".to_string(),
+            id: id.to_string(),
             created_at: Utc::now(),
             changes: vec![],
             backups: vec![KeyBackup {
                 key_path: "HKCU\\Software\\Classes\\Directory\\shell\\foo".to_string(),
                 existed: true,
-                values: BTreeMap::new(),
-                command_values: BTreeMap::new(),
+                snapshot: Some(crate::models::RegistryKeySnapshot {
+                    values: vec![],
+                    subkeys: BTreeMap::new(),
+                }),
             }],
         };
 
         store.save(&record).expect("save");
-        let loaded = store.load("abc").expect("load").expect("exists");
-        assert_eq!(loaded.id, "abc");
+        let loaded = store.load(id).expect("load").expect("exists");
+        assert_eq!(loaded.id, id);
 
         let list = store.list().expect("list");
         assert_eq!(list.len(), 1);
+    }
+
+    #[test]
+    fn rejects_invalid_log_ids() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let store = JsonLogStore::new(tmp.path());
+        assert!(store.load("../escape").is_err());
     }
 }

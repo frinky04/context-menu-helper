@@ -2,7 +2,7 @@ use std::path::Path;
 
 use anyhow::{Result, bail};
 
-use crate::models::{ActionTarget, CreateActionRequest};
+use crate::models::{ActionTarget, ChangeKind, CreateActionRequest, ProposedChange};
 
 pub fn validate_create_action_request(payload: &CreateActionRequest) -> Result<()> {
     if payload.label.trim().is_empty() {
@@ -86,12 +86,128 @@ pub fn sanitize_verb(label: &str) -> String {
     }
 }
 
+pub fn validate_change_batch(changes: &[ProposedChange]) -> Result<()> {
+    for change in changes {
+        validate_change(change)?;
+    }
+    Ok(())
+}
+
+fn validate_change(change: &ProposedChange) -> Result<()> {
+    match change.kind {
+        ChangeKind::Add => {
+            let after = change
+                .after
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("add change requires an 'after' entry"))?;
+            if let Some(before) = &change.before
+                && !before.key_path.eq_ignore_ascii_case(&after.key_path)
+            {
+                bail!("add change contains mismatched before/after key paths");
+            }
+            ensure_allowed_key_path(&after.key_path)?;
+        }
+        ChangeKind::Enable | ChangeKind::Disable => {
+            let before = change
+                .before
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("toggle change requires a 'before' entry"))?;
+            let after = change
+                .after
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("toggle change requires an 'after' entry"))?;
+            if !before.key_path.eq_ignore_ascii_case(&after.key_path) {
+                bail!("toggle change contains mismatched before/after key paths");
+            }
+            ensure_allowed_key_path(&after.key_path)?;
+        }
+        ChangeKind::Remove => {
+            let key_path = change
+                .before
+                .as_ref()
+                .or(change.after.as_ref())
+                .map(|entry| entry.key_path.as_str())
+                .ok_or_else(|| anyhow::anyhow!("remove change requires a target entry"))?;
+            if let (Some(before), Some(after)) = (&change.before, &change.after)
+                && !before.key_path.eq_ignore_ascii_case(&after.key_path)
+            {
+                bail!("remove change contains mismatched before/after key paths");
+            }
+            ensure_allowed_key_path(key_path)?;
+            ensure_remove_allowed_path(key_path)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn ensure_allowed_key_path(path: &str) -> Result<()> {
+    if !is_allowed_key_path(path) {
+        bail!("write outside approved shell paths is not allowed: {path}");
+    }
+    Ok(())
+}
+
+fn ensure_remove_allowed_path(path: &str) -> Result<()> {
+    if !is_remove_allowed_path(path) {
+        bail!("remove is only allowed for HKCU shell verb paths: {path}");
+    }
+    Ok(())
+}
+
+fn is_allowed_key_path(path: &str) -> bool {
+    let lower = path.to_ascii_lowercase();
+
+    if let Some(rel) = lower.strip_prefix(r"hkcu\software\classes\") {
+        return is_allowed_classes_relative(rel);
+    }
+    if let Some(rel) = lower.strip_prefix(r"hkcr\") {
+        return is_allowed_classes_relative(rel);
+    }
+
+    false
+}
+
+fn is_allowed_classes_relative(rel: &str) -> bool {
+    is_direct_shell_path(rel) || is_handler_path(rel)
+}
+
+fn is_direct_shell_path(rel: &str) -> bool {
+    rel.starts_with(r"directory\background\shell\")
+        || rel.starts_with(r"directory\shell\")
+        || rel.starts_with(r"drive\shell\")
+        || rel.starts_with(r"*\shell\")
+        || rel.starts_with(r"allfilesystemobjects\shell\")
+        || (rel.starts_with(r"systemfileassociations\") && rel.contains(r"\shell\"))
+}
+
+fn is_handler_path(rel: &str) -> bool {
+    rel.starts_with(r"directory\background\shellex\contextmenuhandlers\")
+        || rel.starts_with(r"directory\shellex\contextmenuhandlers\")
+        || rel.starts_with(r"drive\shellex\contextmenuhandlers\")
+        || rel.starts_with(r"*\shellex\contextmenuhandlers\")
+        || rel.starts_with(r"allfilesystemobjects\shellex\contextmenuhandlers\")
+        || (rel.starts_with(r"systemfileassociations\")
+            && rel.contains(r"\shellex\contextmenuhandlers\"))
+}
+
+fn is_remove_allowed_path(path: &str) -> bool {
+    let lower = path.to_ascii_lowercase();
+    lower.starts_with(r"hkcu\software\classes\")
+        && lower.contains(r"\shell\")
+        && !lower.contains(r"\shellex\contextmenuhandlers\")
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        looks_like_file_path, normalize_extension, sanitize_verb, validate_create_action_request,
+        looks_like_file_path, normalize_extension, sanitize_verb, validate_change_batch,
+        validate_create_action_request,
     };
-    use crate::models::{ActionTarget, CreateActionRequest, CustomEntryScope};
+    use crate::models::{
+        ActionTarget, ChangeKind, CreateActionRequest, CustomEntryScope, EntryScope, EntryState,
+        MenuEntry, ProposedChange, RiskLevel,
+    };
 
     #[test]
     fn normalizes_extensions() {
@@ -138,5 +254,75 @@ mod tests {
     fn rejects_missing_path_like_command() {
         let request = base_request("./definitely_missing_tool.exe");
         assert!(validate_create_action_request(&request).is_err());
+    }
+
+    fn shell_entry(path: &str) -> MenuEntry {
+        MenuEntry {
+            id: path.to_ascii_lowercase(),
+            label: "Label".to_string(),
+            scope: EntryScope::CurrentUser,
+            key_path: path.to_string(),
+            icon: None,
+            command: Some("tool.exe \"%1\"".to_string()),
+            applies_to: vec!["file".to_string()],
+            state: EntryState::Enabled,
+        }
+    }
+
+    #[test]
+    fn accepts_valid_hkcu_shell_changes() {
+        let before = shell_entry(r"HKCU\Software\Classes\Directory\shell\tool");
+        let mut after = before.clone();
+        after.state = EntryState::Disabled;
+        let changes = vec![ProposedChange {
+            id: "1".to_string(),
+            kind: ChangeKind::Disable,
+            before: Some(before),
+            after: Some(after),
+            risk_level: RiskLevel::Low,
+            reason: "test".to_string(),
+        }];
+
+        assert!(validate_change_batch(&changes).is_ok());
+    }
+
+    #[test]
+    fn rejects_hklm_changes() {
+        let after = shell_entry(r"HKLM\Software\Classes\Directory\shell\tool");
+        let changes = vec![ProposedChange {
+            id: "1".to_string(),
+            kind: ChangeKind::Add,
+            before: None,
+            after: Some(after),
+            risk_level: RiskLevel::Medium,
+            reason: "test".to_string(),
+        }];
+
+        assert!(validate_change_batch(&changes).is_err());
+    }
+
+    #[test]
+    fn restricts_remove_to_hkcu_shell_paths() {
+        let allowed = vec![ProposedChange {
+            id: "1".to_string(),
+            kind: ChangeKind::Remove,
+            before: Some(shell_entry(r"HKCU\Software\Classes\Directory\shell\tool")),
+            after: None,
+            risk_level: RiskLevel::Medium,
+            reason: "test".to_string(),
+        }];
+        assert!(validate_change_batch(&allowed).is_ok());
+
+        let disallowed = vec![ProposedChange {
+            id: "2".to_string(),
+            kind: ChangeKind::Remove,
+            before: Some(shell_entry(
+                r"HKCU\Software\Classes\Directory\shellex\ContextMenuHandlers\tool",
+            )),
+            after: None,
+            risk_level: RiskLevel::Medium,
+            reason: "test".to_string(),
+        }];
+        assert!(validate_change_batch(&disallowed).is_err());
     }
 }

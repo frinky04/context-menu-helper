@@ -3,7 +3,10 @@ use std::sync::Mutex;
 
 use anyhow::{Result, anyhow};
 
-use crate::models::{ChangeKind, EntryState, KeyBackup, MenuEntry, ProposedChange};
+use crate::models::{
+    ChangeKind, EntryState, KeyBackup, MenuEntry, ProposedChange, RegistryKeySnapshot,
+    RegistryValueSnapshot,
+};
 use crate::registry::RegistryProvider;
 
 #[derive(Default)]
@@ -36,32 +39,36 @@ impl RegistryProvider for MockRegistryProvider {
         let mut out = Vec::with_capacity(key_paths.len());
         for key_path in key_paths {
             if let Some(entry) = map.get(key_path) {
-                let mut values = BTreeMap::new();
-                values.insert("".to_string(), entry.label.clone());
+                let mut values = vec![string_value("", &entry.label)];
                 if let Some(icon) = &entry.icon {
-                    values.insert("Icon".to_string(), icon.clone());
+                    values.push(string_value("Icon", icon));
                 }
                 if entry.state == EntryState::Disabled {
-                    values.insert("LegacyDisable".to_string(), String::new());
+                    values.push(string_value("LegacyDisable", ""));
                 }
+                values.sort_by(|a, b| a.name.cmp(&b.name));
 
-                let mut command_values = BTreeMap::new();
+                let mut subkeys = BTreeMap::new();
                 if let Some(cmd) = &entry.command {
-                    command_values.insert("".to_string(), cmd.clone());
+                    subkeys.insert(
+                        "command".to_string(),
+                        RegistryKeySnapshot {
+                            values: vec![string_value("", cmd)],
+                            subkeys: BTreeMap::new(),
+                        },
+                    );
                 }
 
                 out.push(KeyBackup {
                     key_path: key_path.clone(),
                     existed: true,
-                    values,
-                    command_values,
+                    snapshot: Some(RegistryKeySnapshot { values, subkeys }),
                 });
             } else {
                 out.push(KeyBackup {
                     key_path: key_path.clone(),
                     existed: false,
-                    values: BTreeMap::new(),
-                    command_values: BTreeMap::new(),
+                    snapshot: None,
                 });
             }
         }
@@ -115,25 +122,52 @@ impl RegistryProvider for MockRegistryProvider {
             return Ok(());
         }
 
-        let state = if backup.values.contains_key("LegacyDisable") {
+        let snapshot = backup
+            .snapshot
+            .as_ref()
+            .ok_or_else(|| anyhow!("missing snapshot for existing backup"))?;
+
+        let state = if snapshot
+            .values
+            .iter()
+            .any(|value| value.name.eq_ignore_ascii_case("LegacyDisable"))
+        {
             EntryState::Disabled
         } else {
             EntryState::Enabled
         };
 
-        let label = backup
+        let label = snapshot
             .values
-            .get("")
-            .cloned()
+            .iter()
+            .find(|value| value.name.is_empty())
+            .and_then(decode_string_value)
             .unwrap_or_else(|| "Restored Entry".to_string());
+
+        let icon = snapshot
+            .values
+            .iter()
+            .find(|value| value.name.eq_ignore_ascii_case("Icon"))
+            .and_then(decode_string_value);
+
+        let command = snapshot
+            .subkeys
+            .get("command")
+            .and_then(|command_key| {
+                command_key
+                    .values
+                    .iter()
+                    .find(|value| value.name.is_empty())
+            })
+            .and_then(decode_string_value);
 
         let entry = MenuEntry {
             id: backup.key_path.to_ascii_lowercase(),
             label,
             scope: crate::models::EntryScope::CurrentUser,
             key_path: backup.key_path.clone(),
-            icon: backup.values.get("Icon").cloned(),
-            command: backup.command_values.get("").cloned(),
+            icon,
+            command,
             applies_to: vec!["unknown".to_string()],
             state,
         };
@@ -141,4 +175,18 @@ impl RegistryProvider for MockRegistryProvider {
         map.insert(backup.key_path.clone(), entry);
         Ok(())
     }
+}
+
+fn string_value(name: &str, value: &str) -> RegistryValueSnapshot {
+    RegistryValueSnapshot {
+        name: name.to_string(),
+        value_type: 1,
+        data: value.as_bytes().to_vec(),
+    }
+}
+
+fn decode_string_value(value: &RegistryValueSnapshot) -> Option<String> {
+    String::from_utf8(value.data.clone())
+        .ok()
+        .map(|decoded| decoded.trim_end_matches('\0').to_string())
 }
