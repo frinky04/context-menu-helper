@@ -221,6 +221,39 @@ function resetCreateForm() {
 
 let _statusTimer = null;
 const _statusBar = document.querySelector(".status-bar");
+const _toastContainer = document.getElementById("toast-container");
+
+const MAX_TOASTS = 5;
+const TOAST_ICONS = { success: "\u2713", error: "\u2717", info: "\u2139" };
+
+function showToast(message, kind = "info", durationMs = 3500) {
+  // Cap visible toasts — remove oldest if at limit
+  while (_toastContainer.children.length >= MAX_TOASTS) {
+    _toastContainer.firstElementChild.remove();
+  }
+
+  const toast = document.createElement("div");
+  toast.className = `toast toast-${kind}`;
+
+  const iconSpan = document.createElement("span");
+  iconSpan.className = "toast-icon";
+  iconSpan.textContent = TOAST_ICONS[kind] || TOAST_ICONS.info;
+
+  const textSpan = document.createElement("span");
+  textSpan.textContent = message;
+
+  toast.append(iconSpan, textSpan);
+  _toastContainer.appendChild(toast);
+
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => toast.classList.add("visible"));
+  });
+
+  setTimeout(() => {
+    toast.classList.remove("visible");
+    setTimeout(() => toast.remove(), 300);
+  }, durationMs);
+}
 
 function setStatus(message, isError = false) {
   if (_statusTimer) {
@@ -233,14 +266,41 @@ function setStatus(message, isError = false) {
 
   if (isError) {
     _statusBar.classList.add("status-error");
+    showToast(message, "error", 5000);
   } else if (message.endsWith("...")) {
     _statusBar.classList.add("status-working");
   } else if (message !== "Ready." && message !== "Refreshed.") {
     _statusBar.classList.add("status-success");
+    showToast(message, "success");
     _statusTimer = setTimeout(() => {
       _statusBar.classList.remove("status-success");
     }, 4000);
   }
+}
+
+// ── Entry icon (letter avatar) ─────────────────────
+
+const AVATAR_COLORS = [
+  "#4a6fa5", "#6b5b95", "#88b04b", "#d65076",
+  "#45b8ac", "#e0a84a", "#5b7065", "#b56357",
+  "#6c8ebf", "#9b8ec4", "#5dad8a", "#c75d7e",
+];
+
+function avatarColor(text) {
+  let hash = 0;
+  for (let i = 0; i < text.length; i++) {
+    hash = ((hash << 5) - hash + text.charCodeAt(i)) | 0;
+  }
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+}
+
+function createEntryIcon(label) {
+  const clean = stripMnemonic(label) || "?";
+  const el = document.createElement("div");
+  el.className = "entry-icon";
+  el.textContent = clean.charAt(0);
+  el.style.background = avatarColor(clean);
+  return el;
 }
 
 async function invoke(command, payload = {}) {
@@ -773,7 +833,10 @@ function renderEntries() {
     const row = document.createElement("div");
     row.className = "entry";
 
+    const icon = createEntryIcon(group.label);
+
     const left = document.createElement("div");
+    left.className = "entry-info";
     const title = document.createElement("strong");
     title.textContent = group.label;
 
@@ -855,7 +918,7 @@ function renderEntries() {
       actions.appendChild(remove);
     }
 
-    row.append(left, actions);
+    row.append(icon, left, actions);
     ui.entriesList.appendChild(row);
   }
 }
@@ -1315,17 +1378,17 @@ ui.applyCustomBtn.addEventListener("click", async () => {
   }
 });
 
+const _navButtons = document.querySelectorAll(".nav-btn[data-panel]");
+const _panels = document.querySelectorAll(".panel[id^='panel-']");
+
+function switchPanel(panelId) {
+  state.activePanel = panelId;
+  _panels.forEach((p) => p.classList.toggle("active", p.id === `panel-${panelId}`));
+  _navButtons.forEach((b) => b.classList.toggle("active", b.dataset.panel === panelId));
+}
+
 function initNavigation() {
-  const navButtons = document.querySelectorAll(".nav-btn[data-panel]");
-  const panels = document.querySelectorAll(".panel[id^='panel-']");
-
-  function switchPanel(panelId) {
-    state.activePanel = panelId;
-    panels.forEach((p) => p.classList.toggle("active", p.id === `panel-${panelId}`));
-    navButtons.forEach((b) => b.classList.toggle("active", b.dataset.panel === panelId));
-  }
-
-  navButtons.forEach((btn) => {
+  _navButtons.forEach((btn) => {
     btn.addEventListener("click", () => switchPanel(btn.dataset.panel));
   });
 
@@ -1333,6 +1396,56 @@ function initNavigation() {
 }
 
 const extensionChips = new ChipInput(ui.chipContainer, ui.chipInput, () => {});
+
+// ── Keyboard shortcuts ────────────────────────────────
+
+function isTyping() {
+  const el = document.activeElement;
+  return el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable);
+}
+
+document.addEventListener("keydown", (event) => {
+  // Ctrl+F → focus search
+  if ((event.ctrlKey || event.metaKey) && event.key === "f") {
+    event.preventDefault();
+    switchPanel("entries");
+    ui.searchInput.focus();
+    ui.searchInput.select();
+    return;
+  }
+
+  // Ctrl+R or F5 → refresh
+  if (((event.ctrlKey || event.metaKey) && event.key === "r") || event.key === "F5") {
+    event.preventDefault();
+    ui.refreshBtn.click();
+    return;
+  }
+
+  // Escape → clear search or blur active input
+  if (event.key === "Escape") {
+    if (document.activeElement === ui.searchInput && ui.searchInput.value) {
+      ui.searchInput.value = "";
+      state.searchTerm = "";
+      renderEntries();
+      renderSuggestions();
+      return;
+    }
+    if (isTyping()) {
+      document.activeElement.blur();
+      return;
+    }
+  }
+
+  // 1/2/3 → switch panels (only when not typing)
+  if (!isTyping() && !event.ctrlKey && !event.metaKey && !event.altKey) {
+    const panelKeys = { "1": "entries", "2": "create", "3": "history" };
+    const panel = panelKeys[event.key];
+    if (panel) {
+      event.preventDefault();
+      switchPanel(panel);
+    }
+  }
+});
 
 (async function init() {
   try {
