@@ -317,7 +317,13 @@ mod windows {
         let raw_label = key
             .get_value::<String, _>("MUIVerb")
             .or_else(|_| key.get_value::<String, _>(""))
-            .unwrap_or_else(|_| subpath.split('\\').next_back().unwrap_or("Unnamed").to_string());
+            .unwrap_or_else(|_| {
+                subpath
+                    .split('\\')
+                    .next_back()
+                    .unwrap_or("Unnamed")
+                    .to_string()
+            });
         let label = normalize_label(&raw_label, subpath);
 
         let command = key
@@ -463,9 +469,10 @@ mod windows {
 
     fn infer_applies_to(path: &str) -> Vec<String> {
         if path.contains(r"SystemFileAssociations\")
-            && let Some(ext) = path.split('\\').find(|part| part.starts_with('.')) {
-                return vec![ext.to_string()];
-            }
+            && let Some(ext) = path.split('\\').find(|part| part.starts_with('.'))
+        {
+            return vec![ext.to_string()];
+        }
         if path.contains(r"Directory\Background") {
             return vec!["directory_background".to_string()];
         }
@@ -492,7 +499,11 @@ mod windows {
     fn normalize_label(raw: &str, subpath: &str) -> String {
         let trimmed = raw.trim();
         if trimmed.is_empty() {
-            return subpath.split('\\').next_back().unwrap_or("Unnamed").to_string();
+            return subpath
+                .split('\\')
+                .next_back()
+                .unwrap_or("Unnamed")
+                .to_string();
         }
 
         if let Some(indirect) = trimmed.strip_prefix('@') {
