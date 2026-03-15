@@ -31,6 +31,12 @@ No entries are ever deleted. The app uses the `LegacyDisable` registry strategy 
 - **Rollback** — Revert any change set to restore the registry to its previous state
 - **Advanced mode** — Toggle visibility of technical details like registry paths and keys
 
+## Screenshots
+
+| Detected Entries | Create Action |
+|:---:|:---:|
+| ![Detected Entries](screenshots/1.png) | ![Create Action](screenshots/2.png) |
+
 ## Getting Started
 
 ### Prerequisites
