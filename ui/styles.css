@@ -116,6 +116,39 @@ body {
   font-size: 0.9rem;
 }
 
+.category-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.category-chip {
+  border: 1px solid #3b584b;
+  background: #16231d;
+  color: #cfe4d8;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.category-chip.active {
+  border-color: #2f9d67;
+  background: #1d3d2f;
+  color: #eafaf2;
+}
+
+.category-badge {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 0.75rem;
+  color: #9bd9b9;
+  border: 1px solid #31664a;
+  border-radius: 999px;
+  padding: 3px 8px;
+}
+
 .entry {
   border: 1px solid #c7d7c9;
   background: #1a2722;
